@@ -1,0 +1,9 @@
+__pycache__/
+*.py[cod]
+build/
+dist/
+*.spec
+output/*.csv
+output/*.png
+!output/.gitkeep
+gui_settings.json
