@@ -1,3 +1,4 @@
+# Движок симуляции: миграция, пролиферация, экспорт CSV
 from osteoblast_sim.simulation.engine import (
     EventCounters,
     OsteoblastSimulation,

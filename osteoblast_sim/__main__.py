@@ -1,4 +1,8 @@
-"""Запуск: python -m osteoblast_sim (из корня проекта)."""
+"""
+Запуск пакета: python -m osteoblast_sim (из корня проекта, где лежит run.py).
+
+Делегирует в run.main() — те же правила GUI vs CLI.
+"""
 
 import sys
 from pathlib import Path

@@ -1,3 +1,4 @@
+# Графики, анимация, сохранение PNG
 from osteoblast_sim.visualization.charts import (
     ColorMode,
     animate_simulation,

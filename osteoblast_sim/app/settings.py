@@ -1,7 +1,9 @@
 """
 Сохранение последних параметров GUI между запусками.
 
-Файл gui_settings.json лежит рядом с .exe (или run.py).
+Файл gui_settings.json в корне проекта (рядом с exe).
+Зачем: пользователю не вводить одни и те же P_migrate, размер сетки и т.д.
+При битом JSON или неверных значениях — откат к DEFAULT_SETTINGS (_sanitize).
 """
 
 from __future__ import annotations
@@ -14,7 +16,7 @@ from osteoblast_sim.paths import project_root
 
 SETTINGS_FILE = "gui_settings.json"
 
-# Значения по умолчанию
+# Стартовые значения, если файла нет или поле отсутствует
 DEFAULT_SETTINGS: dict[str, Any] = {
     "graph_type": "grid_2d",
     "size": 10,
@@ -27,9 +29,10 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     "seed": "",
     "color_mode": "occupancy",
     "animate": False,
+    "diagonals": False,
 }
 
-VALID_GRAPH_TYPES = {"grid_2d", "random", "small_world"}
+VALID_GRAPH_TYPES = {"grid_2d", "grid_2d_random", "random", "small_world"}
 VALID_COLOR_MODES = {"occupancy", "colonization", "local_density"}
 
 
@@ -38,7 +41,9 @@ def settings_path() -> Path:
 
 
 def load_gui_settings() -> dict[str, Any]:
-    """Загрузить сохранённые параметры или вернуть значения по умолчанию."""
+    """
+    Прочитать JSON; при любой ошибке — дефолты (GUI всё равно откроется).
+    """
     path = settings_path()
     if not path.is_file():
         return dict(DEFAULT_SETTINGS)
@@ -58,18 +63,22 @@ def load_gui_settings() -> dict[str, Any]:
 
 
 def save_gui_settings(data: dict[str, Any]) -> None:
-    """Записать параметры в gui_settings.json."""
+    """Записать настройки; ошибка диска не прерывает работу программы."""
     path = settings_path()
     payload = _sanitize({**DEFAULT_SETTINGS, **data})
     try:
         with path.open("w", encoding="utf-8") as f:
             json.dump(payload, f, ensure_ascii=False, indent=2)
     except OSError:
-        pass  # не блокируем работу GUI при ошибке записи
+        pass
 
 
 def _sanitize(data: dict[str, Any]) -> dict[str, Any]:
-    """Проверка и приведение типов перед применением в GUI."""
+    """
+    Приведение типов и отсечение невалидного ввода.
+
+    Зачем: пользователь мог вручную испортить JSON или ввести p_migrate=5 в поле.
+    """
     out = dict(DEFAULT_SETTINGS)
 
     gt = str(data.get("graph_type", out["graph_type"])).strip()
@@ -100,25 +109,24 @@ def _sanitize(data: dict[str, Any]) -> dict[str, Any]:
         out["time_steps"] = DEFAULT_SETTINGS["time_steps"]
 
     out["initial_cells"] = str(data.get("initial_cells", out["initial_cells"]) or "center").strip()
-
     out["seed"] = str(data.get("seed", out["seed"]) or "").strip()
 
     cm = str(data.get("color_mode", out["color_mode"])).strip()
     out["color_mode"] = cm if cm in VALID_COLOR_MODES else DEFAULT_SETTINGS["color_mode"]
 
     out["animate"] = bool(data.get("animate", out["animate"]))
+    out["diagonals"] = bool(data.get("diagonals", out["diagonals"]))
 
     return out
 
 
 def settings_to_fields_dict(saved: dict[str, Any]) -> dict[str, Any]:
-    """Словарь для инициализации tk.Variable."""
-    s = _sanitize(saved)
-    return s
+    """Подготовка словаря для tk.IntVar / StringVar и т.д."""
+    return _sanitize(saved)
 
 
 def fields_to_settings_dict(fields: dict) -> dict[str, Any]:
-    """Собрать текущие значения из полей GUI для сохранения."""
+    """Снять текущие значения с виджетов перед записью в JSON."""
     return {
         "graph_type": fields["graph_type"].get(),
         "size": fields["size"].get(),
@@ -131,4 +139,5 @@ def fields_to_settings_dict(fields: dict) -> dict[str, Any]:
         "seed": fields["seed"].get().strip(),
         "color_mode": fields["color_mode"].get(),
         "animate": fields["animate"].get(),
+        "diagonals": fields["diagonals"].get(),
     }

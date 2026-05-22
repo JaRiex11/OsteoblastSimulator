@@ -1,7 +1,10 @@
 """
-Графический интерфейс — основной способ работы (в т.ч. из .exe).
+Графический интерфейс (tkinter) — основной режим для .exe.
 
-Последние параметры сохраняются в gui_settings.json рядом с программой.
+Поля связаны с tk.Variable; при запуске подставляются значения из gui_settings.json.
+Сохранение: перед прогоном, при закрытии окна.
+
+Внутри используется тот же run_experiment(), что и CLI — одна логика модели.
 """
 
 from __future__ import annotations
@@ -31,7 +34,11 @@ from osteoblast_sim.visualization.charts import (
 
 
 def _make_fields(root: tk.Tk, saved: dict) -> dict:
-    """Создать tk.Variable с учётом сохранённых настроек."""
+    """
+    Создать переменные полей формы.
+
+    master=root нужен, чтобы переменные жили столько же, сколько окно.
+    """
     s = settings_to_fields_dict(saved)
     return {
         "graph_type": tk.StringVar(master=root, value=s["graph_type"]),
@@ -45,6 +52,7 @@ def _make_fields(root: tk.Tk, saved: dict) -> dict:
         "seed": tk.StringVar(master=root, value=s["seed"]),
         "color_mode": tk.StringVar(master=root, value=s["color_mode"]),
         "animate": tk.BooleanVar(master=root, value=s["animate"]),
+        "diagonals": tk.BooleanVar(master=root, value=s["diagonals"]),
     }
 
 
@@ -53,6 +61,7 @@ def launch_gui() -> None:
     root.title("Остеобласты в пористом имплантате")
     root.minsize(420, 520)
 
+    # Восстановить прошлые параметры пользователя
     saved = load_gui_settings()
     fields = _make_fields(root, saved)
 
@@ -65,7 +74,9 @@ def launch_gui() -> None:
 
     row(0, "Тип решётки", ttk.Combobox(
         frame, textvariable=fields["graph_type"],
-        values=["grid_2d", "random", "small_world"], state="readonly", width=20,
+        values=["grid_2d", "grid_2d_random", "random", "small_world"],
+        state="readonly",
+        width=20,
     ))
     row(1, "Размер сетки", ttk.Entry(frame, textvariable=fields["size"], width=22))
     row(2, "Число узлов (пусто=авто)", ttk.Entry(frame, textvariable=fields["nodes"], width=22))
@@ -80,10 +91,16 @@ def launch_gui() -> None:
     ))
     row(9, "Seed", ttk.Entry(frame, textvariable=fields["seed"], width=22))
     ttk.Checkbutton(frame, text="Анимация", variable=fields["animate"]).grid(row=10, column=1, sticky="w")
+    ttk.Checkbutton(
+        frame,
+        text="Диагонали (grid_2d_random)",
+        variable=fields["diagonals"],
+    ).grid(row=11, column=1, sticky="w")
 
+    # Лог отчёта под формой (только чтение)
     log = scrolledtext.ScrolledText(frame, height=8, width=50, state="disabled", font=("Consolas", 9))
-    log.grid(row=11, column=0, columnspan=2, pady=8, sticky="nsew")
-    frame.rowconfigure(11, weight=1)
+    log.grid(row=12, column=0, columnspan=2, pady=8, sticky="nsew")
+    frame.rowconfigure(12, weight=1)
 
     def log_msg(text: str) -> None:
         log.configure(state="normal")
@@ -95,6 +112,10 @@ def launch_gui() -> None:
         save_gui_settings(fields_to_settings_dict(fields))
 
     def _args() -> argparse.Namespace:
+        """
+        Собрать Namespace как у CLI — чтобы run_experiment() не знал,
+        откуда пришли параметры (GUI или терминал).
+        """
         nodes_raw = fields["nodes"].get().strip()
         seed_raw = fields["seed"].get().strip()
         return argparse.Namespace(
@@ -103,7 +124,8 @@ def launch_gui() -> None:
             nodes=int(nodes_raw) if nodes_raw else None,
             degree=fields["degree"].get(),
             edge_probability=None,
-            rewiring_probability=0.1,
+            rewiring_probability=0.1,  # для small_world; в GUI не вынесено
+            diagonals=fields["diagonals"].get(),
             p_migrate=fields["p_migrate"].get(),
             p_prolif=fields["p_prolif"].get(),
             time_steps=fields["time_steps"].get(),
@@ -124,8 +146,7 @@ def launch_gui() -> None:
             persist_settings()
             ns = _args()
             sim, result = run_experiment(ns)
-            report = format_statistics(result)
-            log_msg(report)
+            log_msg(format_statistics(result))
             if ns.animate and result.occupied_sets:
                 animate_simulation(sim.graph, result, color_mode=ns.color_mode)
             else:
@@ -136,6 +157,7 @@ def launch_gui() -> None:
             messagebox.showerror("Ошибка", f"{type(exc).__name__}: {exc}")
 
     def on_save() -> None:
+        """Прогон + автосохранение CSV и двух PNG с меткой времени в output/."""
         try:
             persist_settings()
             ns = _args()
@@ -170,7 +192,7 @@ def launch_gui() -> None:
             subprocess.run(["xdg-open", folder], check=False)
 
     btn_frame = ttk.Frame(frame)
-    btn_frame.grid(row=12, column=0, columnspan=2, pady=6)
+    btn_frame.grid(row=13, column=0, columnspan=2, pady=6)
     ttk.Button(btn_frame, text="Запустить", command=on_run).pack(side="left", padx=4)
     ttk.Button(btn_frame, text="Запустить и сохранить в output/", command=on_save).pack(side="left", padx=4)
     ttk.Button(btn_frame, text="Открыть папку output", command=_open_output).pack(side="left", padx=4)

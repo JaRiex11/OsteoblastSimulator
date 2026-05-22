@@ -46,8 +46,11 @@
 
 4. ПАРАМЕТРЫ
 ------------
-  --graph-type     grid_2d | random | small_world
-  --size           сторона сетки (grid_2d)
+  --graph-type     grid_2d | grid_2d_random | random | small_world
+  --size           сторона сетки (grid_2d, grid_2d_random)
+  grid_2d_random   узлы как grid_2d; bond percolation по пулу ортогональных рёбер
+  --diagonals      для grid_2d_random: в тот же пул — по одной диагонали на квадрат 2×2
+                   (без пересечений); --degree влияет на все типы связей одинаково
   --nodes          число пор
   --degree         связность решётки
   --p-migrate      вероятность миграции

@@ -1,3 +1,4 @@
+# Построение графов пористой структуры (решётка, random, small world)
 from osteoblast_sim.graph.builder import (
     average_degree,
     build_graph,
