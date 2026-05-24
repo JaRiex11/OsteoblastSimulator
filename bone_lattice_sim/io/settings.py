@@ -26,10 +26,11 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     "msc_p_prolif": 0.15,
     "fibroblast_p_migrate": 0.65,
     "fibroblast_p_prolif": 0.10,
+    "cell_radius_pct": 24,
 }
 
 VALID_PRESETS = {"regular_6", "random", "full_26"}
-VALID_INITIAL = {"center", "random"}
+VALID_INITIAL = {"center", "face", "random"}
 
 
 def settings_path() -> Path:
@@ -100,6 +101,11 @@ def sanitize(data: dict[str, Any]) -> dict[str, Any]:
 
     try:
         out["update_every"] = max(1, int(data.get("update_every", out["update_every"])))
+    except (TypeError, ValueError):
+        pass
+
+    try:
+        out["cell_radius_pct"] = min(42, max(6, int(data.get("cell_radius_pct", out["cell_radius_pct"]))))
     except (TypeError, ValueError):
         pass
 

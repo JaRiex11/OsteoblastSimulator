@@ -215,6 +215,51 @@ def reachable_fraction(lattice: LatticeGraph, source_pores: list[int]) -> float:
     return len(visited) / lattice.n_pores
 
 
+def face_pore_indices(lattice: LatticeGraph, *, axis: int = 2, side: str = "min") -> list[int]:
+    """
+    Индексы пор на одной грани куба (по умолчанию min-Z — «нижняя» грань, контакт с тканью).
+
+    axis: 0=x, 1=y, 2=z; side: min | max
+    """
+    coords = lattice.coords
+    values = coords[:, axis]
+    target = float(np.min(values) if side == "min" else np.max(values))
+    tol = max(1e-5, float(np.ptp(values)) * 1e-4)
+    return [i for i in range(lattice.n_pores) if abs(coords[i, axis] - target) <= tol]
+
+
+def face_center_pore_index(lattice: LatticeGraph, *, axis: int = 2, side: str = "min") -> int:
+    """Центральная пора на грани (ближайшая к центру грани в двух других осях)."""
+    face = face_pore_indices(lattice, axis=axis, side=side)
+    if not face:
+        return 0
+    coords = lattice.coords[face]
+    other = [a for a in range(3) if a != axis]
+    cx = float(np.mean(coords[:, other[0]]))
+    cy = float(np.mean(coords[:, other[1]]))
+    dists = (coords[:, other[0]] - cx) ** 2 + (coords[:, other[1]] - cy) ** 2
+    return face[int(np.argmin(dists))]
+
+
+def random_face_pore_indices(
+    lattice: LatticeGraph,
+    count: int,
+    rng: random.Random,
+    *,
+    axis: int = 2,
+    side: str = "min",
+) -> list[int]:
+    face = face_pore_indices(lattice, axis=axis, side=side)
+    if count < 1:
+        raise ValueError("count должно быть >= 1")
+    if count > len(face):
+        raise ValueError(
+            f"На грани {len(face)} пор, нельзя разместить {count} клеток. "
+            "Уменьшите число в «Составе» или выберите random/center."
+        )
+    return rng.sample(face, count)
+
+
 def center_pore_index(size: int) -> int:
     """Индекс центральной поры в кубической сетке OpenPNM (row-major по shape)."""
     i = size // 2

@@ -15,14 +15,14 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from bone_lattice_sim.experiment import create_lattice, create_simulation
+from bone_lattice_sim.experiment import build_initial_from_settings, create_lattice, create_simulation
 from bone_lattice_sim.io.settings import load_settings, save_settings
 from bone_lattice_sim.simulation.stats import SimulationResult, StepStats
 from bone_lattice_sim.ui.tabs.charts_tab import ChartsTab
 from bone_lattice_sim.ui.tabs.config_tab import ConfigTab
 from bone_lattice_sim.ui.tabs.viewer_tab import ViewerTab
 from bone_lattice_sim.ui.worker import SimulationWorker
-from bone_lattice_sim.viz.snapshot import build_visual_context, empty_snapshot
+from bone_lattice_sim.viz.snapshot import build_visual_context, snapshot_from_initial
 
 
 class MainWindow(QMainWindow):
@@ -67,6 +67,10 @@ class MainWindow(QMainWindow):
         self.status.showMessage("Готово")
 
         self.config_tab.set_settings(load_settings())
+        saved = load_settings()
+        pct = int(saved.get("cell_radius_pct", 24))
+        self.viewer_tab.viewer.set_cell_radius_factor(pct / 100.0)
+        self.viewer_tab.sync_size_slider(pct / 100.0)
         self.viewer_tab.set_preview_handler(self._preview_lattice)
         self.btn_run.clicked.connect(self._on_run)
         self.btn_stop.clicked.connect(self._on_stop)
@@ -89,13 +93,14 @@ class MainWindow(QMainWindow):
         try:
             settings = self.config_tab.get_settings()
             lattice = create_lattice(settings)
+            initial = build_initial_from_settings(lattice, settings)
             context = build_visual_context(lattice)
-            snapshot = empty_snapshot(lattice.n_pores)
+            snapshot = snapshot_from_initial(lattice, initial)
             self._visual_context = context
             self.viewer_tab.show_lattice(context, snapshot)
             self.tabs.setCurrentWidget(self.viewer_tab)
             self._log(
-                f"Предпросмотр: {lattice.n_pores} пор, preset={lattice.meta.get('preset')}",
+                f"Предпросмотр: {lattice.n_pores} пор, стартовых клеток: {len(initial)}",
             )
         except Exception as exc:
             QMessageBox.warning(self, "Предпросмотр", str(exc))
@@ -110,6 +115,7 @@ class MainWindow(QMainWindow):
             return
 
         settings = self.config_tab.get_settings()
+        settings["cell_radius_pct"] = self.viewer_tab.slider_size.value()
         save_settings(settings)
         self.charts_tab.reset()
         self.viewer_tab.clear()
@@ -147,10 +153,12 @@ class MainWindow(QMainWindow):
 
     def _on_visual_ready(self, context, snapshot) -> None:
         self._visual_context = context
+        self.viewer_tab.cache_simulation_frame(context, snapshot)
         self.viewer_tab.show_lattice(context, snapshot)
 
     def _on_visual_updated(self, snapshot) -> None:
         if self._visual_context is not None:
+            self.viewer_tab.cache_simulation_frame(self._visual_context, snapshot)
             self.viewer_tab.update_snapshot(snapshot)
 
     def _on_finished(self, result: SimulationResult) -> None:
@@ -175,7 +183,9 @@ class MainWindow(QMainWindow):
         self._worker = None
 
     def closeEvent(self, event: QCloseEvent) -> None:
-        save_settings(self.config_tab.get_settings())
+        data = self.config_tab.get_settings()
+        data["cell_radius_pct"] = self.viewer_tab.slider_size.value()
+        save_settings(data)
         if self._worker and self._worker.isRunning():
             self._worker.cancel()
             self._worker.wait(3000)

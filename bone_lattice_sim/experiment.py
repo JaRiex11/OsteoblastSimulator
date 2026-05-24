@@ -11,6 +11,7 @@ from bone_lattice_sim.lattice.engine import (
     LatticeGraph,
     average_degree,
     build_lattice,
+    random_face_pore_indices,
     reachable_fraction,
 )
 from bone_lattice_sim.simulation.agents import CellType, CellTypeParams
@@ -38,25 +39,10 @@ def type_params_from_settings(settings: dict[str, Any]) -> dict[CellType, CellTy
     return params
 
 
-def build_initial_from_settings(
-    lattice: LatticeGraph,
-    settings: dict[str, Any],
+def _cells_from_mix_on_pores(
+    mix: list[tuple[CellType, int]],
+    pores: list[int],
 ) -> list[tuple[int, CellType]]:
-    """Размещение клеток: center (первая из mix) или random (вся mix)."""
-    seed = int(settings["seed"])
-    mode = settings["initial_mode"]
-    mix = parse_initial_cell_mix(settings["cell_mix"])
-
-    if mode == "center":
-        cell_type = mix[0][0]
-        return build_initial_cells(lattice, "center", cell_type=cell_type, seed=seed)
-
-    total = sum(count for _, count in mix)
-    n_seeds = max(total, int(settings.get("n_seeds", total)))
-    rng = random.Random(seed)
-    from bone_lattice_sim.lattice.engine import random_pore_indices
-
-    pores = random_pore_indices(lattice.n_pores, min(total, n_seeds), rng)
     cells: list[tuple[int, CellType]] = []
     idx = 0
     for cell_type, count in mix:
@@ -65,9 +51,45 @@ def build_initial_from_settings(
                 break
             cells.append((pores[idx], cell_type))
             idx += 1
-    if not cells:
-        return build_initial_cells(lattice, "center", seed=seed)
     return cells
+
+
+def build_initial_from_settings(
+    lattice: LatticeGraph,
+    settings: dict[str, Any],
+) -> list[tuple[int, CellType]]:
+    """Размещение: center, face (грань min-Z), random."""
+    seed = int(settings["seed"])
+    mode = settings["initial_mode"]
+    mix = parse_initial_cell_mix(settings["cell_mix"])
+    total = sum(count for _, count in mix)
+    rng = random.Random(seed)
+
+    if mode == "center":
+        cell_type = mix[0][0]
+        return build_initial_cells(lattice, "center", cell_type=cell_type, seed=seed)
+
+    if mode == "face":
+        if total <= 1:
+            cell_type = mix[0][0]
+            return build_initial_cells(lattice, "face", cell_type=cell_type, seed=seed)
+        pores = random_face_pore_indices(lattice, total, rng)
+        cells = _cells_from_mix_on_pores(mix, pores)
+        if cells:
+            return cells
+        return build_initial_cells(lattice, "face", cell_type=mix[0][0], seed=seed)
+
+    if mode == "random":
+        n_seeds = max(total, int(settings.get("n_seeds", total)))
+        from bone_lattice_sim.lattice.engine import random_pore_indices
+
+        pores = random_pore_indices(lattice.n_pores, min(total, n_seeds), rng)
+        cells = _cells_from_mix_on_pores(mix, pores)
+        if cells:
+            return cells
+        return build_initial_cells(lattice, "center", seed=seed)
+
+    raise ValueError(f"Неизвестный initial_mode: {mode!r}")
 
 
 def create_lattice(settings: dict[str, Any]) -> LatticeGraph:

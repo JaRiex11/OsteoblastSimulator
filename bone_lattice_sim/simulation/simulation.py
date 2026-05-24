@@ -9,7 +9,7 @@ from dataclasses import dataclass, field
 from collections.abc import Callable
 from typing import Iterable
 
-from bone_lattice_sim.lattice.engine import LatticeGraph, center_pore_index, random_pore_indices
+from bone_lattice_sim.lattice.engine import LatticeGraph, center_pore_index, face_center_pore_index, random_pore_indices
 from bone_lattice_sim.simulation.agents import (
     ActionType,
     Cell,
@@ -253,7 +253,7 @@ def build_initial_cells(
     """
     Размещение начальных клеток.
 
-    seed_mode: center | random
+    seed_mode: center | face | random
     """
     rng = random.Random(seed)
     mode = seed_mode.strip().lower()
@@ -264,11 +264,15 @@ def build_initial_cells(
             raise ValueError("center требует size в meta решётки")
         return [(center_pore_index(size), cell_type)]
 
+    if mode == "face":
+        pore = face_center_pore_index(lattice)
+        return [(pore, cell_type)]
+
     if mode == "random":
         pores = random_pore_indices(lattice.n_pores, n_seeds, rng)
         return [(p, cell_type) for p in pores]
 
-    raise ValueError("seed_mode: center | random")
+    raise ValueError("seed_mode: center | face | random")
 
 
 def parse_initial_cell_mix(spec: str) -> list[tuple[CellType, int]]:

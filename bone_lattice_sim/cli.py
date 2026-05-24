@@ -34,9 +34,9 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--initial",
-        choices=["center", "random"],
+        choices=["center", "face", "random"],
         default="center",
-        help="Размещение начальных клеток",
+        help="center | face (грань min-Z, контакт с тканью) | random",
     )
     parser.add_argument("--n-seeds", type=int, default=1, help="Число начальных клеток для initial=random")
     return parser

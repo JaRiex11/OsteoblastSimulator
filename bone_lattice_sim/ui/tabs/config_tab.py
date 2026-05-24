@@ -101,11 +101,12 @@ class ConfigTab(QWidget):
         cells_form = QFormLayout(cells_box)
 
         initial = QComboBox()
-        initial.addItems(["center", "random"])
+        initial.addItems(["center", "face", "random"])
         initial.setCurrentText(s["initial_mode"])
         initial.setToolTip(
-            "center — одна клетка (первый тип из «Состава») в центре; "
-            "random — все клетки из «Состава» в случайных порах.",
+            "center — одна клетка в центре объёма; "
+            "face — спавн с грани min-Z (контакт с тканью); "
+            "random — по всему объёму.",
         )
         self._fields["initial_mode"] = initial
         cells_form.addRow(self._label("Начальное размещение:", initial.toolTip()), initial)
