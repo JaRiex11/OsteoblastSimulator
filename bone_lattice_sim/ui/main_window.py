@@ -82,6 +82,10 @@ class MainWindow(QMainWindow):
 
     def _preview_lattice(self) -> None:
         """Построить решётку из настроек без запуска симуляции."""
+        err = self.config_tab.validate_input()
+        if err:
+            QMessageBox.warning(self, "Проверьте параметры", err)
+            return
         try:
             settings = self.config_tab.get_settings()
             lattice = create_lattice(settings)
@@ -98,6 +102,11 @@ class MainWindow(QMainWindow):
 
     def _on_run(self) -> None:
         if self._worker and self._worker.isRunning():
+            return
+
+        err = self.config_tab.validate_input()
+        if err:
+            QMessageBox.warning(self, "Проверьте параметры", err)
             return
 
         settings = self.config_tab.get_settings()

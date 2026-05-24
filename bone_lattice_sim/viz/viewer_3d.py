@@ -1,7 +1,7 @@
 """
 3D-визуализация поровой сети (PyVista + pyvistaqt).
 
-Поры — точки/сферы с цветом по типу клетки; throats — линии (опционально).
+Клетки — сферы (glyph) в мировых координатах; throats — линии.
 """
 
 from __future__ import annotations
@@ -15,24 +15,44 @@ from PySide6.QtWidgets import QVBoxLayout, QWidget
 
 from bone_lattice_sim.viz.snapshot import LatticeVisualContext, VisualSnapshot
 
-# RGB 0..1
-COLORS = {
-    -1: (0.82, 0.82, 0.85),   # пустая пора
-    0: (0.18, 0.75, 0.35),    # osteoblast
-    1: (0.25, 0.55, 0.95),    # MSC
-    2: (0.92, 0.30, 0.28),    # fibroblast
+# Имена типов для легенды
+TYPE_LABELS = {
+    -1: "Пустая пора",
+    0: "Osteoblast",
+    1: "MSC",
+    2: "Fibroblast",
 }
 
-POINT_SIZE_EMPTY = 6.0
-POINT_SIZE_OCCUPIED = 14.0
+COLORS = {
+    -1: "#b0b0b8",
+    0: "#2ecc71",
+    1: "#3498db",
+    2: "#e74c3c",
+}
 
 
-def _rgb_array(codes: np.ndarray) -> np.ndarray:
-    out = np.zeros((len(codes), 3), dtype=np.float32)
-    for code, rgb in COLORS.items():
-        mask = codes == code
-        out[mask] = rgb
-    return out
+def _estimate_spacing(coords: np.ndarray) -> float:
+    """Среднее расстояние между соседними центрами пор."""
+    if len(coords) < 2:
+        return 1.0
+    try:
+        from scipy.spatial import cKDTree
+
+        tree = cKDTree(coords)
+        dists, _ = tree.query(coords, k=2)
+        return float(np.median(dists[:, 1]))
+    except Exception:
+        span = float(np.max(np.ptp(coords, axis=0)))
+        n = max(2, int(round(len(coords) ** (1.0 / 3.0))))
+        return span / (n - 1) if n > 1 else 1.0
+
+
+def _sphere_mesh(points: np.ndarray, radius: float) -> pv.PolyData | None:
+    if len(points) == 0:
+        return None
+    cloud = pv.PolyData(points)
+    geom = pv.Sphere(radius=radius, theta_resolution=14, phi_resolution=14)
+    return cloud.glyph(geom=geom, scale=False)
 
 
 def _throat_lines_mesh(coords: np.ndarray, edges: np.ndarray) -> pv.PolyData:
@@ -57,12 +77,14 @@ class LatticeViewer3D(QWidget):
         self._show_throats = True
         self._show_empty = True
         self._last_snapshot: VisualSnapshot | None = None
+        self._r_occ = 0.35
+        self._r_empty = 0.12
 
     def set_display_options(self, *, show_throats: bool, show_empty: bool) -> None:
         self._show_throats = show_throats
         self._show_empty = show_empty
         if self._context is not None and self._last_snapshot is not None:
-            self.update_snapshot(self._last_snapshot)
+            self.show_lattice(self._context, self._last_snapshot)
 
     def clear(self) -> None:
         self.plotter.clear()
@@ -72,6 +94,10 @@ class LatticeViewer3D(QWidget):
     def show_lattice(self, context: LatticeVisualContext, snapshot: VisualSnapshot) -> None:
         self._context = context
         self._last_snapshot = snapshot
+        spacing = _estimate_spacing(context.coords)
+        self._r_occ = spacing * 0.42
+        self._r_empty = spacing * 0.14
+
         self.plotter.clear()
         self._draw_throats(context)
         self._draw_pores(context, snapshot)
@@ -82,12 +108,16 @@ class LatticeViewer3D(QWidget):
         if self._context is None:
             return
         self._last_snapshot = snapshot
-        try:
-            self.plotter.remove_actor("pores", reset_camera=False, render=False)
-        except (KeyError, ValueError):
-            pass
+        self._remove_pore_actors()
         self._draw_pores(self._context, snapshot)
         self.plotter.render()
+
+    def _remove_pore_actors(self) -> None:
+        for name in ("pores_empty", "pores_ob", "pores_msc", "pores_fib"):
+            try:
+                self.plotter.remove_actor(name, reset_camera=False, render=False)
+            except (KeyError, ValueError, TypeError):
+                pass
 
     def _draw_throats(self, context: LatticeVisualContext) -> None:
         if not self._show_throats:
@@ -96,40 +126,41 @@ class LatticeViewer3D(QWidget):
         self.plotter.add_mesh(
             mesh,
             name="throats",
-            color="#555566",
-            line_width=1,
-            opacity=0.35,
-            render_lines_as_tubes=False,
+            color="#666680",
+            line_width=2,
+            opacity=0.45,
+            render_lines_as_tubes=True,
         )
 
     def _draw_pores(self, context: LatticeVisualContext, snapshot: VisualSnapshot) -> None:
         codes = snapshot.pore_types
-        mask = np.ones(len(codes), dtype=bool)
-        if not self._show_empty:
-            mask = codes >= 0
+        groups = [
+            (-1, "pores_empty", self._r_empty, self._show_empty),
+            (0, "pores_ob", self._r_occ, True),
+            (1, "pores_msc", self._r_occ, True),
+            (2, "pores_fib", self._r_occ, True),
+        ]
+        for code, name, radius, enabled in groups:
+            if not enabled:
+                continue
+            idx = np.where(codes == code)[0]
+            if len(idx) == 0:
+                continue
+            pts = context.coords[idx]
+            mesh = _sphere_mesh(pts, radius)
+            if mesh is None:
+                continue
+            opacity = 0.35 if code < 0 else 0.95
+            self.plotter.add_mesh(
+                mesh,
+                name=name,
+                color=COLORS[code],
+                opacity=opacity,
+                smooth_shading=True,
+            )
 
-        if not np.any(mask):
-            return
-
-        idx = np.where(mask)[0]
-        pts = context.coords[idx]
-        sel_codes = codes[idx]
-        rgb = _rgb_array(sel_codes)
-
-        cloud = pv.PolyData(pts)
-        cloud["rgb"] = rgb
-        sizes = np.where(sel_codes < 0, POINT_SIZE_EMPTY, POINT_SIZE_OCCUPIED).astype(float)
-        cloud["point_size"] = sizes
-
-        self.plotter.add_mesh(
-            cloud,
-            name="pores",
-            scalars="rgb",
-            rgb=True,
-            render_points_as_spheres=True,
-            point_size=10,
-            opacity=0.95 if self._show_empty else 1.0,
-        )
+    def occupied_count(self, snapshot: VisualSnapshot) -> int:
+        return int(np.sum(snapshot.pore_types >= 0))
 
     def export_png(self, path: str | Path) -> None:
         path = Path(path)

@@ -273,12 +273,15 @@ def build_initial_cells(
 
 def parse_initial_cell_mix(spec: str) -> list[tuple[CellType, int]]:
     """
-    Разбор строки вида 'osteoblast:5,msc:3' для смешанного seeding (будущий GUI).
+    Разбор строки вида 'osteoblast:5,msc:3' или 'fibroblast:1;msc:2'.
+
+    Разделители: запятая или точка с запятой. Без «:число» считается :1.
     """
     if not spec.strip():
         return [(CellType.OSTEOBLAST, 1)]
+    normalized = spec.replace(";", ",")
     result: list[tuple[CellType, int]] = []
-    for part in spec.split(","):
+    for part in normalized.split(","):
         part = part.strip()
         if not part:
             continue
@@ -287,5 +290,9 @@ def parse_initial_cell_mix(spec: str) -> list[tuple[CellType, int]]:
             count = int(count_str.strip())
         else:
             name, count = part, 1
+        if count < 1:
+            raise ValueError(f"Число клеток должно быть >= 1, получено: {count}")
         result.append((parse_cell_type(name), count))
+    if not result:
+        raise ValueError("Состав клеток пуст. Пример: osteoblast:1 или fibroblast:3,msc:2")
     return result

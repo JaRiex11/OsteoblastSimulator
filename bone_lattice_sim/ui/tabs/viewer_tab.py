@@ -15,6 +15,7 @@ from PySide6.QtWidgets import (
 )
 
 from bone_lattice_sim.paths import ensure_output_dir
+from bone_lattice_sim.ui.help_text import VIEWER_LEGEND
 from bone_lattice_sim.viz.snapshot import LatticeVisualContext, VisualSnapshot
 from bone_lattice_sim.viz.viewer_3d import LatticeViewer3D
 
@@ -30,7 +31,10 @@ class ViewerTab(QWidget):
         self.chk_throats = QCheckBox("Показывать throats")
         self.chk_throats.setChecked(True)
         self.chk_empty = QCheckBox("Показывать пустые поры")
-        self.chk_empty.setChecked(True)
+        self.chk_empty.setChecked(False)
+        self.chk_empty.setToolTip(
+            "Серые сферы — свободные поры. Снимите галочку, чтобы видеть только клетки.",
+        )
         self.btn_preview = QPushButton("Предпросмотр решётки")
         self.btn_png = QPushButton("Экспорт PNG")
         self.lbl_step = QLabel("Шаг: —")
@@ -42,6 +46,10 @@ class ViewerTab(QWidget):
         controls.addStretch()
         controls.addWidget(self.lbl_step)
         root.addLayout(controls)
+
+        self.lbl_legend = QLabel(VIEWER_LEGEND)
+        self.lbl_legend.setWordWrap(True)
+        root.addWidget(self.lbl_legend)
 
         self.viewer = LatticeViewer3D()
         root.addWidget(self.viewer, stretch=1)
@@ -79,8 +87,10 @@ class ViewerTab(QWidget):
 
     def show_lattice(self, context: LatticeVisualContext, snapshot: VisualSnapshot) -> None:
         self.viewer.show_lattice(context, snapshot)
-        self.lbl_step.setText(f"Шаг: {snapshot.step}")
+        n = self.viewer.occupied_count(snapshot)
+        self.lbl_step.setText(f"Шаг: {snapshot.step} | занятых пор: {n}")
 
     def update_snapshot(self, snapshot: VisualSnapshot) -> None:
         self.viewer.update_snapshot(snapshot)
-        self.lbl_step.setText(f"Шаг: {snapshot.step}")
+        n = self.viewer.occupied_count(snapshot)
+        self.lbl_step.setText(f"Шаг: {snapshot.step} | занятых пор: {n}")
