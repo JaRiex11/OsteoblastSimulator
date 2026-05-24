@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import random
 from dataclasses import dataclass, field
+from collections.abc import Callable
 from typing import Iterable
 
 from bone_lattice_sim.lattice.engine import LatticeGraph, center_pore_index, random_pore_indices
@@ -205,16 +206,35 @@ class Simulation:
         prolif_n = self._apply_proliferations(resolved)
         return migrate_n, prolif_n
 
-    def run(self) -> SimulationResult:
+    def run(
+        self,
+        *,
+        on_step: Callable[[StepStats], None] | None = None,
+        cancel_check: Callable[[], bool] | None = None,
+        update_every: int = 1,
+    ) -> SimulationResult:
+        """
+        Полный прогон. on_step вызывается для GUI (каждые update_every шагов).
+        cancel_check возвращает True — остановка досрочно.
+        """
         result = SimulationResult(
             n_pores=self.lattice.n_pores,
             preset=str(self.lattice.meta.get("preset", "")),
             avg_lattice_degree=float(self.lattice.meta.get("avg_degree", 0.0)),
         )
-        result.history.append(self._snapshot(0))
+        snap0 = self._snapshot(0)
+        result.history.append(snap0)
+        if on_step is not None:
+            on_step(snap0)
+
         for t in range(1, self.config.time_steps + 1):
+            if cancel_check and cancel_check():
+                break
             migrate_n, prolif_n = self.step()
-            result.history.append(self._snapshot(t, migrate_n, prolif_n))
+            snap = self._snapshot(t, migrate_n, prolif_n)
+            result.history.append(snap)
+            if on_step is not None and (t % max(1, update_every) == 0 or t == self.config.time_steps):
+                on_step(snap)
         return result
 
     @property
