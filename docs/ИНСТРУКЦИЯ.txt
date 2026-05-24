@@ -10,7 +10,7 @@
     simulation/          — движок симуляции
     visualization/       — графики и анимация
     app/                 — CLI и GUI
-  docs/                  — документация
+  docs/                  — документация (ИНСТРУКЦИЯ.txt, СТРУКТУРА_ПРОЕКТА.txt)
   output/                — результаты экспериментов (CSV, PNG)
   scripts/build_exe.bat  — сборка .exe
   dist/                  — готовый OsteoblastSimulator.exe (после сборки)
