@@ -1,1 +1,6 @@
 pyinstaller>=6.0
+
+# BoneLatticeSimulator (scripts/build_bone_exe.bat):
+#   bone_run.py -> dist/BoneLatticeSimulator/BoneLatticeSimulator.exe
+# Legacy 2D (scripts/build_exe.bat):
+#   run.py -> dist/OsteoblastSimulator.exe

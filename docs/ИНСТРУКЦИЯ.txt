@@ -73,4 +73,23 @@
   Параметры окна сохраняются автоматически в gui_settings.json
   (рядом с .exe или run.py): при запуске, после «Запустить» и при закрытии окна.
 
+
+================================================================================
+  BONE LATTICE SIMULATOR (3D, bone_lattice_sim)
+================================================================================
+
+  Запуск GUI:     python run.py --bone   или   python -m bone_lattice_sim
+  CLI:            python run.py --bone --cli --size 10 --initial face --export-dir output
+
+  Начальное размещение:
+    center — центр куба
+    face   — грань min-Z (контакт имплантата с тканью)
+    random — случайные поры
+
+  Вкладка «Экспорт» после симуляции: CSV, JSON, VTK, PNG в output/run_YYYYMMDD_HHMMSS/
+
+  Сборка exe (onedir): scripts\build_bone_exe.bat
+                       -> dist\BoneLatticeSimulator\BoneLatticeSimulator.exe
+  Настройки GUI: bone_gui_settings.json
+
 ================================================================================

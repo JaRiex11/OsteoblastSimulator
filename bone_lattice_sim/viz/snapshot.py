@@ -73,3 +73,11 @@ def snapshot_from_initial(
 
 def empty_snapshot(n_pores: int) -> VisualSnapshot:
     return VisualSnapshot(step=0, pore_types=np.full(n_pores, -1, dtype=np.int8))
+
+
+def copy_snapshot(snapshot: VisualSnapshot) -> VisualSnapshot:
+    """Копия для хранения кадров анимации."""
+    return VisualSnapshot(
+        step=snapshot.step,
+        pore_types=snapshot.pore_types.copy(),
+    )

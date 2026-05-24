@@ -1,18 +1,19 @@
 """
-CLI для Спринта 1: генерация решётки и прогон симуляции без GUI.
+CLI: генерация решётки, симуляция, опциональный экспорт.
 """
 
 from __future__ import annotations
 
 import argparse
 import sys
+from pathlib import Path
 
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Bone lattice simulator — 3D pore network colonization (Sprint 1 CLI)",
+        description="Bone lattice simulator — 3D pore network colonization",
     )
-    parser.add_argument("--size", type=int, default=10, help="Сторона кубической сетки N (N×N×N пор)")
+    parser.add_argument("--size", type=int, default=10, help="Сторона кубической сетки N (N^3 пор)")
     parser.add_argument(
         "--preset",
         choices=["regular_6", "random", "full_26"],
@@ -36,20 +37,44 @@ def build_parser() -> argparse.ArgumentParser:
         "--initial",
         choices=["center", "face", "random"],
         default="center",
-        help="center | face (грань min-Z, контакт с тканью) | random",
+        help="center | face (грань min-Z) | random",
     )
     parser.add_argument("--n-seeds", type=int, default=1, help="Число начальных клеток для initial=random")
+    parser.add_argument(
+        "--export-dir",
+        type=str,
+        default=None,
+        help="Папка для CSV/JSON/VTK/PNG (подпапка run_* создаётся автоматически)",
+    )
     return parser
 
 
+def _settings_from_args(args: argparse.Namespace) -> dict:
+    from bone_lattice_sim.io.settings import sanitize
+
+    return sanitize({
+        "size": args.size,
+        "preset": args.preset,
+        "deletion": args.deletion,
+        "time_steps": args.steps,
+        "seed": args.seed,
+        "initial_mode": args.initial,
+        "n_seeds": args.n_seeds,
+        "cell_mix": f"{args.cell_type}:1",
+        "osteoblast_p_migrate": 0.5,
+        "osteoblast_p_prolif": 0.25,
+        "msc_p_migrate": 0.35,
+        "msc_p_prolif": 0.15,
+        "fibroblast_p_migrate": 0.65,
+        "fibroblast_p_prolif": 0.10,
+    })
+
+
 def main(argv: list[str] | None = None) -> int:
-    from bone_lattice_sim.lattice.engine import build_lattice, average_degree, reachable_fraction
-    from bone_lattice_sim.simulation.agents import parse_cell_type
-    from bone_lattice_sim.simulation.simulation import (
-        Simulation,
-        SimulationConfig,
-        build_initial_cells,
-    )
+    from bone_lattice_sim.experiment import create_simulation, lattice_summary, result_summary
+    from bone_lattice_sim.io.export import export_full_run
+    from bone_lattice_sim.io.run_bundle import build_run_bundle
+    from bone_lattice_sim.lattice.engine import average_degree, reachable_fraction
 
     args = build_parser().parse_args(argv)
 
@@ -57,47 +82,26 @@ def main(argv: list[str] | None = None) -> int:
         print("Ошибка: --size должно быть от 2 до 30", file=sys.stderr)
         return 1
 
-    lattice = build_lattice(
-        args.size,
-        args.preset,
-        throat_deletion_fraction=args.deletion,
-        seed=args.seed,
-    )
-    cell_type = parse_cell_type(args.cell_type)
-    initial = build_initial_cells(
-        lattice,
-        args.initial,
-        cell_type=cell_type,
-        n_seeds=args.n_seeds,
-        seed=args.seed,
-    )
-
-    sim = Simulation(
-        lattice,
-        initial,
-        SimulationConfig(time_steps=args.steps, seed=args.seed),
-    )
+    settings = _settings_from_args(args)
+    sim, lattice, initial = create_simulation(None, settings)
     result = sim.run()
+    bundle = build_run_bundle(sim, lattice, settings, initial, result)
 
     t50 = result.time_to_threshold(0.5)
     t90 = result.time_to_threshold(0.9)
     reach = reachable_fraction(lattice, [p for p, _ in initial])
 
-    print("=== Bone Lattice Simulator (Sprint 1) ===")
-    print(f"Preset: {args.preset}, size={args.size}^3, pores={lattice.n_pores}")
-    print(f"Avg degree: {average_degree(lattice):.2f}, throats={lattice.meta.get('n_throats')}")
-    print(f"Reachable from seed: {reach * 100:.1f}%")
-    print(f"Initial cells: {len(initial)} ({args.cell_type}, {args.initial})")
-    print(f"Steps: {args.steps}, seed: {args.seed}")
-    print(f"Final occupancy: {result.final_occupancy * 100:.2f}%")
-    print(f"Final cell count: {result.final_cell_count}")
+    print("=== Bone Lattice Simulator ===")
+    print(lattice_summary(lattice, initial))
+    print(f"Steps: {args.steps}, seed: {args.seed}, initial={args.initial}")
+    print(result_summary(result))
     print(f"T50: {t50 if t50 is not None else 'n/a'}, T90: {t90 if t90 is not None else 'n/a'}")
-    last = result.history[-1]
-    print(
-        f"Cell types: osteoblast={last.counts_by_type['osteoblast']}, "
-        f"msc={last.counts_by_type['msc']}, "
-        f"fibroblast={last.counts_by_type['fibroblast']}"
-    )
+
+    if args.export_dir:
+        out = Path(args.export_dir)
+        paths = export_full_run(bundle, out)
+        print(f"Экспорт в {paths['timeseries.csv'].parent}")
+
     return 0
 
 

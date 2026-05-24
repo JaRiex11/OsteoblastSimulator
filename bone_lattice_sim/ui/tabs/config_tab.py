@@ -6,6 +6,7 @@ from typing import Any
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
+    QCheckBox,
     QComboBox,
     QDoubleSpinBox,
     QFormLayout,
@@ -142,10 +143,41 @@ class ConfigTab(QWidget):
         cells_form.addRow(self._label("Seed:", ""), self._fields["seed"])
 
         self._fields["update_every"] = self._spin("update_every", 1, 100, s["update_every"])
-        self._fields["update_every"].setToolTip("Обновлять графики и 3D каждые K шагов.")
+        self._fields["update_every"].setToolTip("Обновлять графики каждые K шагов (лёгкая операция).")
         cells_form.addRow(
-            self._label("Обновление UI каждые K шагов:", ""),
+            self._label("Графики каждые K шагов:", ""),
             self._fields["update_every"],
+        )
+
+        self._fields["visual_update_every"] = self._spin(
+            "visual_update_every", 0, 200, s["visual_update_every"],
+        )
+        self._fields["visual_update_every"].setToolTip(
+            "Обновление 3D Viewer. 0 = авто (зависит от размера сетки). "
+            "Больше K — меньше нагрузка, меньше подвисаний.",
+        )
+        cells_form.addRow(
+            self._label("3D каждые K шагов (0=авто):", ""),
+            self._fields["visual_update_every"],
+        )
+
+        chk_anim = QCheckBox("Записать кадры для анимации")
+        chk_anim.setChecked(bool(s["record_animation"]))
+        chk_anim.setToolTip(
+            "После симуляции можно проиграть заполнение решётки на вкладке 3D Viewer.",
+        )
+        self._fields["record_animation"] = chk_anim
+        cells_form.addRow("", chk_anim)
+
+        self._fields["animation_frame_every"] = self._spin(
+            "animation_frame_every", 1, 50, s["animation_frame_every"],
+        )
+        self._fields["animation_frame_every"].setToolTip(
+            "Сохранять каждый N-й шаг в анимацию (1 = все шаги).",
+        )
+        cells_form.addRow(
+            self._label("Кадр анимации каждые N шагов:", ""),
+            self._fields["animation_frame_every"],
         )
 
         prob_box = QGroupBox("Вероятности по типам клеток")
@@ -178,7 +210,9 @@ class ConfigTab(QWidget):
     def get_settings(self) -> dict[str, Any]:
         data: dict[str, Any] = {}
         for key, widget in self._fields.items():
-            if isinstance(widget, QComboBox):
+            if isinstance(widget, QCheckBox):
+                data[key] = widget.isChecked()
+            elif isinstance(widget, QComboBox):
                 data[key] = widget.currentText()
             elif isinstance(widget, QLineEdit):
                 data[key] = widget.text().strip()
@@ -192,7 +226,9 @@ class ConfigTab(QWidget):
             if key not in s:
                 continue
             val = s[key]
-            if isinstance(widget, QComboBox):
+            if isinstance(widget, QCheckBox):
+                widget.setChecked(bool(val))
+            elif isinstance(widget, QComboBox):
                 widget.setCurrentText(str(val))
             elif isinstance(widget, QLineEdit):
                 widget.setText(str(val))

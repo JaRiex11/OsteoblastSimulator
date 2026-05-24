@@ -1,7 +1,7 @@
 """
 3D-визуализация поровой сети (PyVista + pyvistaqt).
 
-Клетки — отдельные непрозрачные сферы (корректная глубина) с wireframe-контуром.
+Оптимизация: throats рисуются один раз; клетки — glyph-пакетами (не N отдельных actors).
 """
 
 from __future__ import annotations
@@ -22,41 +22,22 @@ COLORS = {
     2: "#e74c3c",
 }
 
-RIM_COLOR = "#14141e"
-RIM_SCALE = 1.04
-SPHERE_RES = 14
-OUTLINE_RES = 10
+CELL_ACTOR_NAMES = ("cells_empty", "cells_ob", "cells_msc", "cells_fib")
 
 
 def _estimate_spacing(coords: np.ndarray) -> float:
     if len(coords) < 2:
         return 1.0
-    try:
-        from scipy.spatial import cKDTree
-
-        tree = cKDTree(coords)
-        dists, _ = tree.query(coords, k=2)
-        return float(np.median(dists[:, 1]))
-    except Exception:
-        span = float(np.max(np.ptp(coords, axis=0)))
-        n = max(2, int(round(len(coords) ** (1.0 / 3.0))))
-        return span / (n - 1) if n > 1 else 1.0
-
-
-def _sphere_at(
-    center: np.ndarray,
-    radius: float,
-    *,
-    theta_resolution: int = SPHERE_RES,
-    phi_resolution: int | None = None,
-) -> pv.PolyData:
-    phi_resolution = phi_resolution if phi_resolution is not None else theta_resolution
-    return pv.Sphere(
-        radius=radius,
-        center=center,
-        theta_resolution=theta_resolution,
-        phi_resolution=phi_resolution,
-    )
+    diffs = coords[:, None, :] - coords[None, :, :]
+    dists = np.linalg.norm(diffs, axis=2)
+    np.fill_diagonal(dists, np.inf)
+    nearest = np.min(dists, axis=1)
+    positive = nearest[nearest > 1e-9]
+    if len(positive) > 0:
+        return float(np.median(positive))
+    span = float(np.max(np.ptp(coords, axis=0)))
+    n = max(2, int(round(len(coords) ** (1.0 / 3.0))))
+    return span / (n - 1) if n > 1 else 1.0
 
 
 def _throat_lines_mesh(coords: np.ndarray, edges: np.ndarray) -> pv.PolyData:
@@ -83,7 +64,8 @@ class LatticeViewer3D(QWidget):
         self._show_empty = False
         self._base_spacing = 1.0
         self._cell_radius_factor = 0.24
-        self._dynamic_actors: list[str] = []
+        self._throats_built = False
+        self._fast_mode = False
         self._reset_camera_next = True
 
     @property
@@ -93,22 +75,31 @@ class LatticeViewer3D(QWidget):
     def set_cell_radius_factor(self, factor: float) -> None:
         self._cell_radius_factor = min(0.48, max(0.06, factor))
 
+    def set_fast_mode(self, enabled: bool) -> None:
+        """Меньше полигонов при живом обновлении во время симуляции."""
+        self._fast_mode = enabled
+
     def occupied_radius(self) -> float:
         return self._base_spacing * self._cell_radius_factor
 
     def empty_radius(self) -> float:
         return self._base_spacing * self._cell_radius_factor * 0.45
 
+    def _sphere_resolution(self) -> int:
+        return 8 if self._fast_mode else 14
+
     def set_display_options(self, *, show_throats: bool, show_empty: bool) -> None:
         self._show_throats = show_throats
         self._show_empty = show_empty
-        self.refresh(reset_camera=False)
+        self._rebuild_throats_if_needed()
+        if self._last_snapshot is not None:
+            self._update_cells_only()
 
     def clear(self) -> None:
         self.plotter.clear()
         self._context = None
         self._last_snapshot = None
-        self._dynamic_actors.clear()
+        self._throats_built = False
         self._reset_camera_next = True
 
     def show_lattice(
@@ -122,123 +113,114 @@ class LatticeViewer3D(QWidget):
         self._last_snapshot = snapshot
         self._base_spacing = _estimate_spacing(context.coords)
         self._reset_camera_next = reset_camera
-        self.refresh(reset_camera=reset_camera)
-
-    def refresh(self, *, reset_camera: bool | None = None) -> None:
-        if self._context is None or self._last_snapshot is None:
-            return
-        if reset_camera is None:
-            reset_camera = self._reset_camera_next
         self.plotter.clear()
-        self._dynamic_actors.clear()
-        self._draw_throats(self._context)
-        self._draw_pores(self._context, self._last_snapshot)
+        self._throats_built = False
+        self._rebuild_throats_if_needed()
+        self._update_cells_only()
         if reset_camera:
             self.plotter.reset_camera()
             self._reset_camera_next = False
         self.plotter.render()
 
     def update_snapshot(self, snapshot: VisualSnapshot) -> None:
+        """Быстрое обновление — только клетки, без пересборки throats."""
         if self._context is None:
             return
         self._last_snapshot = snapshot
-        self.refresh(reset_camera=False)
+        self._update_cells_only()
+        self.plotter.render()
 
-    def _track_actor(self, name: str) -> None:
-        self._dynamic_actors.append(name)
+    def refresh_cells(self) -> None:
+        """Перерисовать клетки (например после смены размера сфер)."""
+        if self._last_snapshot is not None:
+            self._update_cells_only()
+            self.plotter.render()
 
-    def _draw_throats(self, context: LatticeVisualContext) -> None:
-        if not self._show_throats:
+    def _remove_cell_actors(self) -> None:
+        for name in CELL_ACTOR_NAMES:
+            try:
+                self.plotter.remove_actor(name, reset_camera=False, render=False)
+            except (KeyError, ValueError):
+                pass
+
+    def _rebuild_throats_if_needed(self) -> None:
+        if self._context is None:
             return
-        mesh = _throat_lines_mesh(context.coords, context.edges)
+        if not self._show_throats:
+            if self._throats_built:
+                try:
+                    self.plotter.remove_actor("throats", reset_camera=False, render=False)
+                except (KeyError, ValueError):
+                    pass
+                self._throats_built = False
+            return
+        if self._throats_built:
+            return
+        mesh = _throat_lines_mesh(self._context.coords, self._context.edges)
         self.plotter.add_mesh(
             mesh,
             name="throats",
             color="#666680",
-            line_width=1.5,
-            opacity=0.35,
-            render_lines_as_tubes=True,
+            line_width=1.2,
+            opacity=0.3,
+            render_lines_as_tubes=False,
         )
-        self._track_actor("throats")
+        self._throats_built = True
 
-    def _add_cell_sphere(
-        self,
-        center: np.ndarray,
-        radius: float,
-        color: str,
-        name: str,
-        *,
-        with_rim: bool,
-    ) -> None:
-        core = _sphere_at(center, radius)
-        self.plotter.add_mesh(
-            core,
-            name=f"{name}_core",
-            color=color,
-            opacity=1.0,
-            smooth_shading=True,
-            lighting=True,
-            specular=0.35,
-            specular_power=18,
-            ambient=0.22,
-            diffuse=0.78,
-        )
-        self._track_actor(f"{name}_core")
-
-        if with_rim:
-            outline = _sphere_at(
-                center,
-                radius * RIM_SCALE,
-                theta_resolution=OUTLINE_RES,
-                phi_resolution=OUTLINE_RES,
-            )
-            self.plotter.add_mesh(
-                outline,
-                name=f"{name}_rim",
-                style="wireframe",
-                color=RIM_COLOR,
-                line_width=1.6,
-                opacity=1.0,
-                lighting=False,
-            )
-            self._track_actor(f"{name}_rim")
-
-    def _draw_cells_individual(
+    def _add_glyph_cells(
         self,
         pts: np.ndarray,
         radius: float,
         color: str,
-        prefix: str,
-        *,
-        with_rim: bool,
+        name: str,
     ) -> None:
-        for i, pt in enumerate(pts):
-            self._add_cell_sphere(pt, radius, color, f"{prefix}_{i}", with_rim=with_rim)
+        if len(pts) == 0:
+            return
+        res = self._sphere_resolution()
+        cloud = pv.PolyData(pts)
+        geom = pv.Sphere(radius=radius, theta_resolution=res, phi_resolution=res)
+        glyphs = cloud.glyph(geom=geom, scale=False, orient=False)
+        self.plotter.add_mesh(
+            glyphs,
+            name=name,
+            color=color,
+            opacity=1.0,
+            smooth_shading=not self._fast_mode,
+            lighting=True,
+        )
 
-    def _draw_pores(self, context: LatticeVisualContext, snapshot: VisualSnapshot) -> None:
-        codes = snapshot.pore_types
+    def _update_cells_only(self) -> None:
+        if self._context is None or self._last_snapshot is None:
+            return
+        self._remove_cell_actors()
+        codes = self._last_snapshot.pore_types
+        coords = self._context.coords
         r_occ = self.occupied_radius()
         r_empty = self.empty_radius()
 
         groups = [
-            (-1, "empty", r_empty, self._show_empty, False),
-            (0, "ob", r_occ, True, True),
-            (1, "msc", r_occ, True, True),
-            (2, "fib", r_occ, True, True),
+            (-1, "cells_empty", r_empty, self._show_empty),
+            (0, "cells_ob", r_occ, True),
+            (1, "cells_msc", r_occ, True),
+            (2, "cells_fib", r_occ, True),
         ]
-        for code, prefix, radius, enabled, with_rim in groups:
+        for code, name, radius, enabled in groups:
             if not enabled:
                 continue
             idx = np.where(codes == code)[0]
             if len(idx) == 0:
                 continue
-            pts = context.coords[idx]
-            self._draw_cells_individual(pts, radius, COLORS[code], prefix, with_rim=with_rim)
+            self._add_glyph_cells(coords[idx], radius, COLORS[code], name)
 
     def occupied_count(self, snapshot: VisualSnapshot) -> int:
         return int(np.sum(snapshot.pore_types >= 0))
 
     def export_png(self, path: str | Path) -> None:
+        was_fast = self._fast_mode
+        self._fast_mode = False
+        if self._last_snapshot is not None:
+            self._update_cells_only()
         path = Path(path)
         path.parent.mkdir(parents=True, exist_ok=True)
         self.plotter.screenshot(str(path))
+        self._fast_mode = was_fast

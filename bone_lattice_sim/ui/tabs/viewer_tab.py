@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import (
     QCheckBox,
     QHBoxLayout,
@@ -66,6 +66,27 @@ class ViewerTab(QWidget):
         row2.addWidget(self.lbl_step)
         root.addLayout(row2)
 
+        row_anim = QHBoxLayout()
+        self.chk_live_3d = QCheckBox("Живое 3D во время симуляции")
+        self.chk_live_3d.setChecked(True)
+        self.chk_live_3d.setToolTip(
+            "Снять галочку, если UI подвисает — симуляция идёт, 3D обновится в конце.",
+        )
+        self.btn_anim_play = QPushButton("▶ Анимация")
+        self.btn_anim_play.setEnabled(False)
+        self.btn_anim_stop = QPushButton("■ Стоп")
+        self.btn_anim_stop.setEnabled(False)
+        self.slider_anim = QSlider(Qt.Orientation.Horizontal)
+        self.slider_anim.setEnabled(False)
+        self.slider_anim.setToolTip("Позиция кадра анимации")
+        self.lbl_anim = QLabel("Кадр: —")
+        row_anim.addWidget(self.chk_live_3d)
+        row_anim.addWidget(self.btn_anim_play)
+        row_anim.addWidget(self.btn_anim_stop)
+        row_anim.addWidget(self.slider_anim, stretch=1)
+        row_anim.addWidget(self.lbl_anim)
+        root.addLayout(row_anim)
+
         self.lbl_legend = QLabel(VIEWER_LEGEND)
         self.lbl_legend.setWordWrap(True)
         root.addWidget(self.lbl_legend)
@@ -76,6 +97,11 @@ class ViewerTab(QWidget):
 
         self._preview_callback = None
         self._sim_cache: tuple[LatticeVisualContext, VisualSnapshot] | None = None
+        self._anim_context: LatticeVisualContext | None = None
+        self._anim_frames: list[VisualSnapshot] = []
+        self._anim_index = 0
+        self._anim_timer = QTimer(self)
+        self._anim_timer.timeout.connect(self._on_anim_tick)
 
         self.chk_throats.toggled.connect(self._on_options_changed)
         self.chk_empty.toggled.connect(self._on_options_changed)
@@ -83,6 +109,9 @@ class ViewerTab(QWidget):
         self.btn_preview.clicked.connect(self._on_preview)
         self.btn_restore.clicked.connect(self._on_restore)
         self.btn_png.clicked.connect(self._on_export_png)
+        self.btn_anim_play.clicked.connect(self._start_animation)
+        self.btn_anim_stop.clicked.connect(self._stop_animation)
+        self.slider_anim.valueChanged.connect(self._on_anim_slider)
 
     def set_preview_handler(self, callback) -> None:
         self._preview_callback = callback
@@ -98,7 +127,7 @@ class ViewerTab(QWidget):
     def _on_size_changed(self, value: int) -> None:
         self.lbl_size.setText(f"{value}%")
         self.viewer.set_cell_radius_factor(value / 100.0)
-        self.viewer.refresh(reset_camera=False)
+        self.viewer.refresh_cells()
 
     def _on_options_changed(self) -> None:
         self.viewer.set_display_options(
@@ -124,8 +153,75 @@ class ViewerTab(QWidget):
         self.lbl_step.setText(f"PNG: {path.name}")
 
     def clear(self) -> None:
+        self._stop_animation()
+        self._anim_frames.clear()
+        self._anim_context = None
+        self._setup_animation_controls()
         self.viewer.clear()
         self.lbl_step.setText("Шаг: —")
+
+    def set_animation_frames(
+        self,
+        context: LatticeVisualContext | None,
+        frames: list[VisualSnapshot],
+    ) -> None:
+        self._anim_context = context
+        self._anim_frames = list(frames)
+        self._setup_animation_controls()
+
+    def _setup_animation_controls(self) -> None:
+        n = len(self._anim_frames)
+        enabled = n > 1 and self._anim_context is not None
+        self.btn_anim_play.setEnabled(enabled)
+        self.btn_anim_stop.setEnabled(False)
+        self.slider_anim.setEnabled(enabled)
+        if enabled:
+            self.slider_anim.blockSignals(True)
+            self.slider_anim.setRange(0, n - 1)
+            self.slider_anim.setValue(0)
+            self.slider_anim.blockSignals(False)
+            self.lbl_anim.setText(f"Кадр: 0 / {n - 1}")
+        else:
+            self.lbl_anim.setText("Кадр: —")
+
+    def live_3d_enabled(self) -> bool:
+        return self.chk_live_3d.isChecked()
+
+    def _start_animation(self) -> None:
+        if not self._anim_frames or self._anim_context is None:
+            return
+        self._anim_index = self.slider_anim.value()
+        self._anim_timer.start(120)
+        self.btn_anim_play.setEnabled(False)
+        self.btn_anim_stop.setEnabled(True)
+
+    def _stop_animation(self) -> None:
+        self._anim_timer.stop()
+        self._setup_animation_controls()
+
+    def _on_anim_tick(self) -> None:
+        if not self._anim_frames or self._anim_context is None:
+            self._stop_animation()
+            return
+        self._anim_index = (self._anim_index + 1) % len(self._anim_frames)
+        self.slider_anim.blockSignals(True)
+        self.slider_anim.setValue(self._anim_index)
+        self.slider_anim.blockSignals(False)
+        self._show_anim_frame(self._anim_index)
+
+    def _on_anim_slider(self, value: int) -> None:
+        if not self._anim_frames or self._anim_context is None:
+            return
+        self._anim_index = value
+        self._show_anim_frame(value)
+
+    def _show_anim_frame(self, index: int) -> None:
+        snap = self._anim_frames[index]
+        self.viewer.set_fast_mode(True)
+        self.viewer.update_snapshot(snap)
+        n = self.viewer.occupied_count(snap)
+        self.lbl_step.setText(f"Анимация шаг {snap.step} | занятых пор: {n}")
+        self.lbl_anim.setText(f"Кадр: {index} / {len(self._anim_frames) - 1}")
 
     def show_lattice(
         self,
@@ -133,12 +229,15 @@ class ViewerTab(QWidget):
         snapshot: VisualSnapshot,
         *,
         reset_camera: bool = True,
+        fast: bool = False,
     ) -> None:
+        self.viewer.set_fast_mode(fast)
         self.viewer.show_lattice(context, snapshot, reset_camera=reset_camera)
         n = self.viewer.occupied_count(snapshot)
         self.lbl_step.setText(f"Шаг: {snapshot.step} | занятых пор: {n}")
 
-    def update_snapshot(self, snapshot: VisualSnapshot) -> None:
+    def update_snapshot(self, snapshot: VisualSnapshot, *, fast: bool = True) -> None:
+        self.viewer.set_fast_mode(fast)
         self.viewer.update_snapshot(snapshot)
         n = self.viewer.occupied_count(snapshot)
         self.lbl_step.setText(f"Шаг: {snapshot.step} | занятых пор: {n}")

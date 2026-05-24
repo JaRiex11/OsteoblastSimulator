@@ -20,6 +20,9 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     "n_seeds": 5,
     "cell_mix": "osteoblast:1",
     "update_every": 5,
+    "visual_update_every": 0,
+    "record_animation": True,
+    "animation_frame_every": 1,
     "osteoblast_p_migrate": 0.5,
     "osteoblast_p_prolif": 0.25,
     "msc_p_migrate": 0.35,
@@ -31,6 +34,18 @@ DEFAULT_SETTINGS: dict[str, Any] = {
 
 VALID_PRESETS = {"regular_6", "random", "full_26"}
 VALID_INITIAL = {"center", "face", "random"}
+
+
+def suggest_visual_update_every(size: int) -> int:
+    """Рекомендуемый интервал обновления 3D (меньше нагрузка на UI)."""
+    n_pores = size ** 3
+    if n_pores > 8000:
+        return 25
+    if n_pores > 2000:
+        return 15
+    if n_pores > 500:
+        return 10
+    return 5
 
 
 def settings_path() -> Path:
@@ -101,6 +116,23 @@ def sanitize(data: dict[str, Any]) -> dict[str, Any]:
 
     try:
         out["update_every"] = max(1, int(data.get("update_every", out["update_every"])))
+    except (TypeError, ValueError):
+        pass
+
+    try:
+        raw_v = int(data.get("visual_update_every", out["visual_update_every"]))
+        out["visual_update_every"] = max(0, raw_v)
+    except (TypeError, ValueError):
+        pass
+    if out["visual_update_every"] == 0:
+        out["visual_update_every"] = suggest_visual_update_every(out["size"])
+
+    out["record_animation"] = bool(data.get("record_animation", out["record_animation"]))
+
+    try:
+        out["animation_frame_every"] = max(
+            1, int(data.get("animation_frame_every", out["animation_frame_every"])),
+        )
     except (TypeError, ValueError):
         pass
 
