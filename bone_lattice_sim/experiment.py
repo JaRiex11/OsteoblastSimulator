@@ -11,6 +11,7 @@ from bone_lattice_sim.lattice.engine import (
     LatticeGraph,
     average_degree,
     build_lattice,
+    center_cluster_pore_indices,
     random_face_pore_indices,
     reachable_fraction,
 )
@@ -66,8 +67,16 @@ def build_initial_from_settings(
     rng = random.Random(seed)
 
     if mode == "center":
-        cell_type = mix[0][0]
-        return build_initial_cells(lattice, "center", cell_type=cell_type, seed=seed)
+        if total <= 1:
+            cell_type = mix[0][0]
+            return build_initial_cells(
+                lattice, "center", cell_type=cell_type, n_seeds=1, seed=seed,
+            )
+        pores = center_cluster_pore_indices(lattice, total)
+        cells = _cells_from_mix_on_pores(mix, pores)
+        if cells:
+            return cells
+        return build_initial_cells(lattice, "center", cell_type=mix[0][0], seed=seed)
 
     if mode == "face":
         if total <= 1:

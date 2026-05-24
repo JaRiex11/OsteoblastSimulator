@@ -9,7 +9,12 @@ from dataclasses import dataclass, field
 from collections.abc import Callable
 from typing import Iterable
 
-from bone_lattice_sim.lattice.engine import LatticeGraph, center_pore_index, face_center_pore_index, random_pore_indices
+from bone_lattice_sim.lattice.engine import (
+    LatticeGraph,
+    center_cluster_pore_indices,
+    face_center_pore_index,
+    random_pore_indices,
+)
 from bone_lattice_sim.simulation.agents import (
     ActionType,
     Cell,
@@ -257,12 +262,10 @@ def build_initial_cells(
     """
     rng = random.Random(seed)
     mode = seed_mode.strip().lower()
-    size = int(lattice.meta.get("size", 0))
 
     if mode == "center":
-        if size <= 0:
-            raise ValueError("center требует size в meta решётки")
-        return [(center_pore_index(size), cell_type)]
+        pores = center_cluster_pore_indices(lattice, max(1, n_seeds))
+        return [(p, cell_type) for p in pores]
 
     if mode == "face":
         pore = face_center_pore_index(lattice)

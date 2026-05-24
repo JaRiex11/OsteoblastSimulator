@@ -266,6 +266,24 @@ def center_pore_index(size: int) -> int:
     return i * size * size + i * size + i
 
 
+def center_cluster_pore_indices(lattice: LatticeGraph, count: int) -> list[int]:
+    """
+    Индексы count пор, ближайших к геометрическому центру решётки.
+
+    Центр — среднее координат всех пор (центр куба в физическом смысле).
+    """
+    if count < 1:
+        raise ValueError("count должно быть >= 1")
+    if count > lattice.n_pores:
+        raise ValueError(
+            f"В решётке {lattice.n_pores} пор, нельзя разместить {count} клеток в центре.",
+        )
+    center = lattice.coords.mean(axis=0)
+    dists = np.linalg.norm(lattice.coords - center, axis=1)
+    order = np.argsort(dists, kind="stable")
+    return [int(i) for i in order[:count]]
+
+
 def random_pore_indices(
     n_pores: int, count: int, rng: random.Random,
 ) -> list[int]:

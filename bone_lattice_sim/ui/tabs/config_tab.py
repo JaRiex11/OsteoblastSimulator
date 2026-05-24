@@ -105,7 +105,7 @@ class ConfigTab(QWidget):
         initial.addItems(["center", "face", "random"])
         initial.setCurrentText(s["initial_mode"])
         initial.setToolTip(
-            "center — одна клетка в центре объёма; "
+            "center — кластер клеток из «Состава» в порых, ближайших к центру объёма; "
             "face — спавн с грани min-Z (контакт с тканью); "
             "random — по всему объёму.",
         )
