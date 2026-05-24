@@ -1,11 +1,10 @@
-"""Главное окно приложения (Спринт 2)."""
+"""Главное окно приложения."""
 
 from __future__ import annotations
 
 from PySide6.QtGui import QCloseEvent
 from PySide6.QtWidgets import (
     QHBoxLayout,
-    QLabel,
     QMainWindow,
     QMessageBox,
     QPushButton,
@@ -16,21 +15,25 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from bone_lattice_sim.experiment import create_lattice, create_simulation
 from bone_lattice_sim.io.settings import load_settings, save_settings
 from bone_lattice_sim.simulation.stats import SimulationResult, StepStats
 from bone_lattice_sim.ui.tabs.charts_tab import ChartsTab
 from bone_lattice_sim.ui.tabs.config_tab import ConfigTab
+from bone_lattice_sim.ui.tabs.viewer_tab import ViewerTab
 from bone_lattice_sim.ui.worker import SimulationWorker
+from bone_lattice_sim.viz.snapshot import build_visual_context, empty_snapshot
 
 
 class MainWindow(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
         self.setWindowTitle("Bone Lattice Simulator — 3D colonization")
-        self.resize(960, 720)
+        self.resize(1024, 780)
 
         self._worker: SimulationWorker | None = None
         self._last_result: SimulationResult | None = None
+        self._visual_context = None
 
         central = QWidget()
         self.setCentralWidget(central)
@@ -47,12 +50,14 @@ class MainWindow(QMainWindow):
 
         self.tabs = QTabWidget()
         self.config_tab = ConfigTab()
+        self.viewer_tab = ViewerTab()
         self.charts_tab = ChartsTab()
         self.log = QTextEdit()
         self.log.setReadOnly(True)
-        self.log.setMaximumHeight(140)
+        self.log.setMaximumHeight(120)
 
         self.tabs.addTab(self.config_tab, "Конфигурация")
+        self.tabs.addTab(self.viewer_tab, "3D Viewer")
         self.tabs.addTab(self.charts_tab, "Графики")
         self.tabs.addTab(self.log, "Журнал")
         layout.addWidget(self.tabs)
@@ -62,6 +67,7 @@ class MainWindow(QMainWindow):
         self.status.showMessage("Готово")
 
         self.config_tab.set_settings(load_settings())
+        self.viewer_tab.set_preview_handler(self._preview_lattice)
         self.btn_run.clicked.connect(self._on_run)
         self.btn_stop.clicked.connect(self._on_stop)
 
@@ -72,6 +78,23 @@ class MainWindow(QMainWindow):
         self.btn_run.setEnabled(not running)
         self.btn_stop.setEnabled(running)
         self.config_tab.setEnabled(not running)
+        self.viewer_tab.btn_preview.setEnabled(not running)
+
+    def _preview_lattice(self) -> None:
+        """Построить решётку из настроек без запуска симуляции."""
+        try:
+            settings = self.config_tab.get_settings()
+            lattice = create_lattice(settings)
+            context = build_visual_context(lattice)
+            snapshot = empty_snapshot(lattice.n_pores)
+            self._visual_context = context
+            self.viewer_tab.show_lattice(context, snapshot)
+            self.tabs.setCurrentWidget(self.viewer_tab)
+            self._log(
+                f"Предпросмотр: {lattice.n_pores} пор, preset={lattice.meta.get('preset')}",
+            )
+        except Exception as exc:
+            QMessageBox.warning(self, "Предпросмотр", str(exc))
 
     def _on_run(self) -> None:
         if self._worker and self._worker.isRunning():
@@ -80,6 +103,8 @@ class MainWindow(QMainWindow):
         settings = self.config_tab.get_settings()
         save_settings(settings)
         self.charts_tab.reset()
+        self.viewer_tab.clear()
+        self._visual_context = None
         self._log("--- Запуск ---")
         self._set_running(True)
         self.status.showMessage("Симуляция выполняется...")
@@ -87,6 +112,8 @@ class MainWindow(QMainWindow):
         self._worker = SimulationWorker(settings, self)
         self._worker.step_updated.connect(self._on_step)
         self._worker.lattice_info.connect(self._on_lattice_info)
+        self._worker.visual_ready.connect(self._on_visual_ready)
+        self._worker.visual_updated.connect(self._on_visual_updated)
         self._worker.finished_ok.connect(self._on_finished)
         self._worker.finished_summary.connect(self._on_summary)
         self._worker.error.connect(self._on_error)
@@ -109,10 +136,18 @@ class MainWindow(QMainWindow):
     def _on_lattice_info(self, text: str) -> None:
         self._log(text)
 
+    def _on_visual_ready(self, context, snapshot) -> None:
+        self._visual_context = context
+        self.viewer_tab.show_lattice(context, snapshot)
+
+    def _on_visual_updated(self, snapshot) -> None:
+        if self._visual_context is not None:
+            self.viewer_tab.update_snapshot(snapshot)
+
     def _on_finished(self, result: SimulationResult) -> None:
         self._last_result = result
         self.charts_tab.load_result(result)
-        self.tabs.setCurrentWidget(self.charts_tab)
+        self.tabs.setCurrentWidget(self.viewer_tab)
 
     def _on_summary(self, text: str) -> None:
         self._log("Итог: " + text)

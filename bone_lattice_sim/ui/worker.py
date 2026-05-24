@@ -10,14 +10,20 @@ from PySide6.QtCore import QThread, Signal
 from bone_lattice_sim.experiment import create_simulation, lattice_summary, result_summary
 from bone_lattice_sim.io.settings import sanitize
 from bone_lattice_sim.simulation.stats import SimulationResult, StepStats
+from bone_lattice_sim.viz.snapshot import (
+    build_visual_context,
+    snapshot_from_simulation,
+)
 
 
 class SimulationWorker(QThread):
     """Строит решётку и гоняет симуляцию; UI получает сигналы прогресса."""
 
-    step_updated = Signal(object)       # StepStats
+    step_updated = Signal(object)           # StepStats
     lattice_info = Signal(str)
-    finished_ok = Signal(object)        # SimulationResult
+    visual_ready = Signal(object, object)   # LatticeVisualContext, VisualSnapshot
+    visual_updated = Signal(object)         # VisualSnapshot
+    finished_ok = Signal(object)            # SimulationResult
     finished_summary = Signal(str)
     error = Signal(str)
 
@@ -37,10 +43,15 @@ class SimulationWorker(QThread):
             sim, lattice, initial = create_simulation(None, self.settings)
             self.lattice_info.emit(lattice_summary(lattice, initial))
 
+            context = build_visual_context(lattice)
+            snap0 = snapshot_from_simulation(sim, 0)
+            self.visual_ready.emit(context, snap0)
+
             update_every = int(self.settings.get("update_every", 5))
 
             def on_step(stats: StepStats) -> None:
                 self.step_updated.emit(stats)
+                self.visual_updated.emit(snapshot_from_simulation(sim, stats.step))
 
             result = sim.run(
                 on_step=on_step,
