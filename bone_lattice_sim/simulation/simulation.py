@@ -31,6 +31,8 @@ class SimulationConfig:
     time_steps: int = 200
     seed: int | None = None
     type_params: dict[CellType, CellTypeParams] = field(default_factory=dict)
+    """Реальное время одного дискретного шага (ч), если включён режим biophysics."""
+    dt_hours: float | None = None
 
     def params_for(self, cell_type: CellType) -> CellTypeParams:
         return self.type_params.get(cell_type, default_params_for(cell_type))
@@ -62,10 +64,11 @@ class Simulation:
     """
     Колонизация 3D-поровой сети несколькими типами клеток.
 
-    Шаг симуляции (синхронный):
-      1. Для каждой клетки (случайный порядок) — decide_action → Intent или NONE.
-      2. Конфликты по target_pore: случайный победитель.
-      3. Применение: сначала MIGRATE, затем PROLIF (с повторной проверкой занятости).
+    Шаг симуляции (синхронный, contact inhibition):
+      1. Для каждой клетки — Intent (миграция / пролиферация) или бездействие.
+      2. Группировка по целевой поре; если на одну пустую пору претендуют ≥2 клеток —
+         все такие намерения отменяются.
+      3. Применение оставшихся уникальных намерений: MIGRATE, затем PROLIF.
     """
 
     def __init__(
@@ -123,14 +126,20 @@ class Simulation:
         return None
 
     def _resolve_conflicts(self, intents: list[Intent]) -> list[Intent]:
-        """Один intent на target_pore — случайный победитель."""
+        """
+        Contact inhibition: конфликт на пустой целевой поре — все участники отменены.
+        """
         by_target: dict[int, list[Intent]] = {}
         for intent in intents:
             by_target.setdefault(intent.target_pore, []).append(intent)
 
         resolved: list[Intent] = []
-        for group in by_target.values():
-            resolved.append(self.rng.choice(group))
+        for target_pore, group in by_target.items():
+            if self.occupancy[target_pore] is not None:
+                continue
+            if len(group) >= 2:
+                continue
+            resolved.append(group[0])
         return resolved
 
     def _apply_migrations(self, intents: list[Intent]) -> int:
@@ -184,6 +193,11 @@ class Simulation:
             applied += 1
         return applied
 
+    def _total_time_hours(self, step_index: int) -> float | None:
+        if self.config.dt_hours is None:
+            return None
+        return step_index * self.config.dt_hours
+
     def _snapshot(self, step_index: int, migrate_n: int = 0, prolif_n: int = 0) -> StepStats:
         occupied = sum(1 for slot in self.occupancy if slot is not None)
         return StepStats(
@@ -193,6 +207,7 @@ class Simulation:
             counts_by_type=count_cells_by_type(self.cells),
             migrate_events=migrate_n,
             prolif_events=prolif_n,
+            total_time_hours=self._total_time_hours(step_index),
         )
 
     def step(self) -> tuple[int, int]:
@@ -226,6 +241,7 @@ class Simulation:
             n_pores=self.lattice.n_pores,
             preset=str(self.lattice.meta.get("preset", "")),
             avg_lattice_degree=float(self.lattice.meta.get("avg_degree", 0.0)),
+            dt_hours=self.config.dt_hours,
         )
         snap0 = self._snapshot(0)
         result.history.append(snap0)

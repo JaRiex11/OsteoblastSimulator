@@ -46,6 +46,11 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Папка для CSV/JSON/VTK/PNG (подпапка run_* создаётся автоматически)",
     )
+    parser.add_argument(
+        "--biophysics",
+        action="store_true",
+        help="Режим Biological Physics: P_mig/P_prol из физических констант",
+    )
     return parser
 
 
@@ -61,6 +66,7 @@ def _settings_from_args(args: argparse.Namespace) -> dict:
         "initial_mode": args.initial,
         "n_seeds": args.n_seeds,
         "cell_mix": f"{args.cell_type}:1",
+        "biological_physics_mode": args.biophysics,
         "osteoblast_p_migrate": 0.5,
         "osteoblast_p_prolif": 0.25,
         "msc_p_migrate": 0.35,
@@ -71,7 +77,12 @@ def _settings_from_args(args: argparse.Namespace) -> dict:
 
 
 def main(argv: list[str] | None = None) -> int:
-    from bone_lattice_sim.experiment import create_simulation, lattice_summary, result_summary
+    from bone_lattice_sim.experiment import (
+        create_simulation,
+        lattice_summary,
+        result_summary,
+        simulation_config_from_settings,
+    )
     from bone_lattice_sim.io.export import export_full_run
     from bone_lattice_sim.io.run_bundle import build_run_bundle
     from bone_lattice_sim.lattice.engine import average_degree, reachable_fraction
@@ -83,6 +94,9 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     settings = _settings_from_args(args)
+    config = simulation_config_from_settings(settings)
+    if config.dt_hours is not None:
+        print(f"Biophysics: dt = {config.dt_hours:.3f} h/step")
     sim, lattice, initial = create_simulation(None, settings)
     result = sim.run()
     bundle = build_run_bundle(sim, lattice, settings, initial, result)

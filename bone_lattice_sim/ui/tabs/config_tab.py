@@ -180,11 +180,41 @@ class ConfigTab(QWidget):
             self._fields["animation_frame_every"],
         )
 
+        bio_box = QGroupBox("Физический режим (Biological Physics)")
+        bio_form = QFormLayout(bio_box)
+        chk_bio = QCheckBox("Пересчитать P_mig / P_prol из скоростей и T_div")
+        chk_bio.setChecked(bool(s["biological_physics_mode"]))
+        chk_bio.setToolTip(
+            "dt = d / v_max; P_migrate = v·dt/d; P_prolif = dt/T_div. "
+            "d=100 мкм; фибро 40 мкм/ч, МСК 20, остео 10.",
+        )
+        self._fields["biological_physics_mode"] = chk_bio
+        bio_form.addRow(chk_bio)
+
+        self._fields["pore_spacing_um"] = QDoubleSpinBox()
+        self._fields["pore_spacing_um"].setRange(1.0, 1000.0)
+        self._fields["pore_spacing_um"].setDecimals(1)
+        self._fields["pore_spacing_um"].setSuffix(" мкм")
+        self._fields["pore_spacing_um"].setValue(float(s["pore_spacing_um"]))
+        self._fields["pore_spacing_um"].setToolTip(
+            "Среднее расстояние между центрами соседних пор (d).",
+        )
+        bio_form.addRow(
+            self._label("Расстояние между порами d:", self._fields["pore_spacing_um"].toolTip()),
+            self._fields["pore_spacing_um"],
+        )
+        self._lbl_bio_dt = QLabel("")
+        self._lbl_bio_dt.setWordWrap(True)
+        bio_form.addRow("Шаг dt:", self._lbl_bio_dt)
+        chk_bio.toggled.connect(self._update_biophysics_ui)
+        self._fields["pore_spacing_um"].valueChanged.connect(self._update_biophysics_ui)
+
         prob_box = QGroupBox("Вероятности по типам клеток")
         prob_form = QFormLayout(prob_box)
         prob_form.addRow(
             QLabel("P_mig — попытка миграции; P_prol — деление (если миграция не выбрана)."),
         )
+        self._prob_spinboxes: list[QDoubleSpinBox] = []
         for label, prefix in (
             ("Остеобласт (osteoblast)", "osteoblast"),
             ("МСК (msc)", "msc"),
@@ -198,10 +228,13 @@ class ConfigTab(QWidget):
             row.addWidget(QLabel("P_prol"))
             row.addWidget(pp)
             prob_form.addRow(label + ":", row)
+            self._prob_spinboxes.extend((pm, pp))
 
         root.addWidget(lattice_box)
         root.addWidget(cells_box)
+        root.addWidget(bio_box)
         root.addWidget(prob_box)
+        self._update_biophysics_ui()
         root.addStretch()
 
         scroll.setWidget(inner)
@@ -236,6 +269,34 @@ class ConfigTab(QWidget):
                 widget.setValue(int(val))
             elif isinstance(widget, QDoubleSpinBox):
                 widget.setValue(float(val))
+        self._update_biophysics_ui()
+
+    def _update_biophysics_ui(self) -> None:
+        from bone_lattice_sim.simulation.agents import CellType
+        from bone_lattice_sim.simulation.biophysics import compute_biophysics_calibration
+
+        enabled = self._fields["biological_physics_mode"].isChecked()
+        self._fields["pore_spacing_um"].setEnabled(enabled)
+        for spin in self._prob_spinboxes:
+            spin.setEnabled(not enabled)
+        if enabled:
+            cal = compute_biophysics_calibration(
+                pore_spacing_um=self._fields["pore_spacing_um"].value(),
+            )
+            mapping = {
+                "osteoblast": CellType.OSTEOBLAST,
+                "msc": CellType.MSC,
+                "fibroblast": CellType.FIBROBLAST,
+            }
+            for prefix, ct in mapping.items():
+                p = cal.type_params[ct]
+                self._fields[f"{prefix}_p_migrate"].setValue(p.p_migrate)
+                self._fields[f"{prefix}_p_prolif"].setValue(p.p_prolif)
+            self._lbl_bio_dt.setText(
+                f"dt = {cal.dt_hours:.2f} ч/шаг (v_max = {cal.v_max_um_h:.0f} мкм/ч, d = {cal.pore_spacing_um:.0f} мкм)",
+            )
+        else:
+            self._lbl_bio_dt.setText("— (абстрактные вероятности)")
 
     def validate_input(self) -> str | None:
         """Проверка полей; None если всё ок, иначе текст ошибки."""

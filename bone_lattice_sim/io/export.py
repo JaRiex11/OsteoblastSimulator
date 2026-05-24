@@ -30,7 +30,7 @@ def export_timeseries_csv(path: str | Path, result: SimulationResult) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", newline="", encoding="utf-8") as f:
         writer = csv.writer(f)
-        writer.writerow([
+        header = [
             "step",
             "occupancy_fraction",
             "cell_count",
@@ -39,9 +39,12 @@ def export_timeseries_csv(path: str | Path, result: SimulationResult) -> Path:
             "fibroblast",
             "migrate_events",
             "prolif_events",
-        ])
+        ]
+        if result.dt_hours is not None:
+            header.append("total_time_hours")
+        writer.writerow(header)
         for s in result.history:
-            writer.writerow([
+            row = [
                 s.step,
                 f"{s.occupancy:.6f}",
                 s.cell_count,
@@ -50,7 +53,12 @@ def export_timeseries_csv(path: str | Path, result: SimulationResult) -> Path:
                 s.counts_by_type.get("fibroblast", 0),
                 s.migrate_events,
                 s.prolif_events,
-            ])
+            ]
+            if result.dt_hours is not None:
+                row.append(
+                    f"{s.total_time_hours:.4f}" if s.total_time_hours is not None else "",
+                )
+            writer.writerow(row)
     return path
 
 
@@ -77,6 +85,7 @@ def export_run_json(path: str | Path, run: SimulationRun) -> Path:
             "final_cell_count": result.final_cell_count,
             "t50": result.time_to_threshold(0.5),
             "t90": result.time_to_threshold(0.9),
+            "dt_hours": result.dt_hours,
             "cancelled_early": run.cancelled_early,
         },
         "occupancy_history": result.occupancy_history,

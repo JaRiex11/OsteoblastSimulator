@@ -30,6 +30,8 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     "fibroblast_p_migrate": 0.65,
     "fibroblast_p_prolif": 0.10,
     "cell_radius_pct": 24,
+    "biological_physics_mode": False,
+    "pore_spacing_um": 100.0,
 }
 
 VALID_PRESETS = {"regular_6", "random", "full_26"}
@@ -138,6 +140,17 @@ def sanitize(data: dict[str, Any]) -> dict[str, Any]:
 
     try:
         out["cell_radius_pct"] = min(42, max(6, int(data.get("cell_radius_pct", out["cell_radius_pct"]))))
+    except (TypeError, ValueError):
+        pass
+
+    out["biological_physics_mode"] = bool(
+        data.get("biological_physics_mode", out["biological_physics_mode"]),
+    )
+
+    try:
+        out["pore_spacing_um"] = max(
+            1.0, float(data.get("pore_spacing_um", out["pore_spacing_um"])),
+        )
     except (TypeError, ValueError):
         pass
 

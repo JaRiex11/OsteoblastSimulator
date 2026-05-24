@@ -17,6 +17,7 @@ class StepStats:
     counts_by_type: dict[str, int]
     migrate_events: int = 0
     prolif_events: int = 0
+    total_time_hours: float | None = None
 
 
 @dataclass
@@ -25,6 +26,7 @@ class SimulationResult:
     history: list[StepStats] = field(default_factory=list)
     preset: str = ""
     avg_lattice_degree: float = 0.0
+    dt_hours: float | None = None
 
     @property
     def occupancy_history(self) -> list[float]:

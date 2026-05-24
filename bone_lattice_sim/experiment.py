@@ -16,6 +16,10 @@ from bone_lattice_sim.lattice.engine import (
     reachable_fraction,
 )
 from bone_lattice_sim.simulation.agents import CellType, CellTypeParams
+from bone_lattice_sim.simulation.biophysics import (
+    DEFAULT_PORE_SPACING_UM,
+    compute_biophysics_calibration,
+)
 from bone_lattice_sim.simulation.simulation import (
     Simulation,
     SimulationConfig,
@@ -26,6 +30,10 @@ from bone_lattice_sim.simulation.stats import SimulationResult
 
 
 def type_params_from_settings(settings: dict[str, Any]) -> dict[CellType, CellTypeParams]:
+    if settings.get("biological_physics_mode"):
+        spacing = float(settings.get("pore_spacing_um", DEFAULT_PORE_SPACING_UM))
+        return compute_biophysics_calibration(pore_spacing_um=spacing).type_params
+
     mapping = {
         CellType.OSTEOBLAST: "osteoblast",
         CellType.MSC: "msc",
@@ -38,6 +46,22 @@ def type_params_from_settings(settings: dict[str, Any]) -> dict[CellType, CellTy
             p_prolif=float(settings[f"{prefix}_p_prolif"]),
         )
     return params
+
+
+def simulation_config_from_settings(settings: dict[str, Any]) -> SimulationConfig:
+    type_params = type_params_from_settings(settings)
+    dt_hours: float | None = None
+    if settings.get("biological_physics_mode"):
+        spacing = float(settings.get("pore_spacing_um", DEFAULT_PORE_SPACING_UM))
+        cal = compute_biophysics_calibration(pore_spacing_um=spacing)
+        dt_hours = cal.dt_hours
+        type_params = cal.type_params
+    return SimulationConfig(
+        time_steps=int(settings["time_steps"]),
+        seed=int(settings["seed"]),
+        type_params=type_params,
+        dt_hours=dt_hours,
+    )
 
 
 def _cells_from_mix_on_pores(
@@ -117,11 +141,7 @@ def create_simulation(
     if lattice is None:
         lattice = create_lattice(settings)
     initial = build_initial_from_settings(lattice, settings)
-    config = SimulationConfig(
-        time_steps=int(settings["time_steps"]),
-        seed=int(settings["seed"]),
-        type_params=type_params_from_settings(settings),
-    )
+    config = simulation_config_from_settings(settings)
     sim = Simulation(lattice, initial, config)
     return sim, lattice, initial
 
@@ -145,9 +165,14 @@ def result_summary(result: SimulationResult) -> str:
             f"MSC={last.counts_by_type['msc']}, "
             f"Fib={last.counts_by_type['fibroblast']}"
         )
+    time_part = ""
+    if result.dt_hours is not None and result.history:
+        hours = result.history[-1].total_time_hours
+        if hours is not None:
+            time_part = f", t={hours:.1f} ч (dt={result.dt_hours:.2f} ч/шаг)"
     return (
         f"Занятость: {result.final_occupancy * 100:.1f}%, "
         f"клеток: {result.final_cell_count}, "
         f"T50={t50 if t50 is not None else 'n/a'}, "
-        f"T90={t90 if t90 is not None else 'n/a'}{types}"
+        f"T90={t90 if t90 is not None else 'n/a'}{types}{time_part}"
     )
