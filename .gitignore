@@ -3,9 +3,10 @@ __pycache__/
 build/
 dist/
 *.spec
-output/*.csv
-output/*.png
+# Экспорт симуляций (output/run_*, CSV, JSON, VTK, PNG)
+output/
 !output/.gitkeep
+results/
 gui_settings.json
 bone_gui_settings.json
 

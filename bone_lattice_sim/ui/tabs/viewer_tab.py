@@ -204,7 +204,10 @@ class ViewerTab(QWidget):
         if not self._anim_frames or self._anim_context is None:
             self._stop_animation()
             return
-        self._anim_index = (self._anim_index + 1) % len(self._anim_frames)
+        if self._anim_index >= len(self._anim_frames) - 1:
+            self._stop_animation()
+            return
+        self._anim_index += 1
         self.slider_anim.blockSignals(True)
         self.slider_anim.setValue(self._anim_index)
         self.slider_anim.blockSignals(False)

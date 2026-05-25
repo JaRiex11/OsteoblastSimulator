@@ -43,6 +43,7 @@ class ExportTab(QWidget):
         self.log.setReadOnly(True)
         self.log.setMaximumHeight(200)
         layout.addWidget(self.log)
+        layout.addStretch()
 
         self._run: SimulationRun | None = None
 
