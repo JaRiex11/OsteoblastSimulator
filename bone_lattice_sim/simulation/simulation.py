@@ -109,21 +109,42 @@ class Simulation:
     def _free_neighbors(self, pore: int) -> list[int]:
         return [n for n in self.lattice.neighbors[pore] if self.occupancy[n] is None]
 
+    def _pick_action_type(self, p_migrate: float, p_prolif: float) -> ActionType | None:
+        """
+        Одно действие за шаг: миграция, деление или покой.
+
+        Вероятности задают доли среди {migrate, prolif, stay}. Если p_migrate + p_prolif > 1,
+        пары нормируются (иначе при p_migrate=1 деление было бы недостижимо).
+        """
+        p_m = min(1.0, max(0.0, p_migrate))
+        p_p = min(1.0, max(0.0, p_prolif))
+        if p_m <= 0.0 and p_p <= 0.0:
+            return None
+
+        total = p_m + p_p
+        if total > 1.0:
+            p_m /= total
+            p_p /= total
+
+        r = self.rng.random()
+        if r < p_m:
+            return ActionType.MIGRATE
+        if r < p_m + p_p:
+            return ActionType.PROLIF
+        return None
+
     def _decide_action(self, cell: Cell) -> Intent | None:
         params = self.config.params_for(cell.cell_type)
         free = self._free_neighbors(cell.pore)
         if not free:
             return None
 
-        if self.rng.random() < params.p_migrate:
-            target = self.rng.choice(free)
-            return Intent(cell.cell_id, ActionType.MIGRATE, target)
+        action = self._pick_action_type(params.p_migrate, params.p_prolif)
+        if action is None:
+            return None
 
-        if self.rng.random() < params.p_prolif:
-            target = self.rng.choice(free)
-            return Intent(cell.cell_id, ActionType.PROLIF, target)
-
-        return None
+        target = self.rng.choice(free)
+        return Intent(cell.cell_id, action, target)
 
     def _resolve_conflicts(self, intents: list[Intent]) -> list[Intent]:
         """
