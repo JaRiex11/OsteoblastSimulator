@@ -11,6 +11,11 @@ from bone_lattice_sim.experiment import create_simulation, lattice_summary, resu
 from bone_lattice_sim.io.run_bundle import build_run_bundle
 from bone_lattice_sim.io.settings import sanitize, suggest_visual_update_every
 from bone_lattice_sim.simulation.stats import StepStats
+from bone_lattice_sim.ui.progress_intervals import (
+    should_record_animation_frame,
+    should_update_charts,
+    should_update_visual,
+)
 from bone_lattice_sim.viz.snapshot import (
     build_visual_context,
     copy_snapshot,
@@ -68,21 +73,28 @@ class SimulationWorker(QThread):
                 animation_frames.append(copy_snapshot(snap0))
 
             def on_step(stats: StepStats) -> None:
-                self.step_updated.emit(stats)
-                snap = snapshot_from_simulation(sim, stats.step)
+                step = stats.step
+                if should_update_charts(step, chart_every, time_steps):
+                    self.step_updated.emit(stats)
 
-                if record_anim and (
-                    stats.step % anim_every == 0 or stats.step >= time_steps
-                ):
-                    animation_frames.append(copy_snapshot(snap))
+                need_snap = (
+                    (record_anim and should_record_animation_frame(step, anim_every, time_steps))
+                    or should_update_visual(step, visual_every, time_steps)
+                )
+                if need_snap:
+                    snap = snapshot_from_simulation(sim, step)
+                    if record_anim and should_record_animation_frame(
+                        step, anim_every, time_steps,
+                    ):
+                        animation_frames.append(copy_snapshot(snap))
+                    if should_update_visual(step, visual_every, time_steps):
+                        self.visual_updated.emit(snap)
 
-                if stats.step % visual_every == 0 or stats.step >= time_steps:
-                    self.visual_updated.emit(snap)
-
+            # Колбэк на каждом шаге симуляции; интервалы графиков / 3D / анимации независимы.
             result = sim.run(
                 on_step=on_step,
                 cancel_check=self._cancelled,
-                update_every=chart_every,
+                update_every=1,
             )
 
             if record_anim and animation_frames:

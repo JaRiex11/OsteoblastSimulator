@@ -70,7 +70,8 @@ class ViewerTab(QWidget):
         self.chk_live_3d = QCheckBox("Живое 3D во время симуляции")
         self.chk_live_3d.setChecked(True)
         self.chk_live_3d.setToolTip(
-            "Снять галочку, если UI подвисает — симуляция идёт, 3D обновится в конце.",
+            "Перерисовка 3D по ходу прогона (интервал — «3D каждые K» в конфигурации). "
+            "Работает только пока открыта эта вкладка. Снять галочку — обновление в конце.",
         )
         self.btn_anim_play = QPushButton("▶ Анимация")
         self.btn_anim_play.setEnabled(False)

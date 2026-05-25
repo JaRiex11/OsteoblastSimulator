@@ -8,3 +8,8 @@ output/*.png
 !output/.gitkeep
 gui_settings.json
 bone_gui_settings.json
+
+# Шаблон отчёта (исходный макет кафедры, не коммитить)
+шаблон отчета/
+# Сам отчет
+отчет/

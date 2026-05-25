@@ -143,7 +143,10 @@ class ConfigTab(QWidget):
         cells_form.addRow(self._label("Seed:", ""), self._fields["seed"])
 
         self._fields["update_every"] = self._spin("update_every", 1, 100, s["update_every"])
-        self._fields["update_every"].setToolTip("Обновлять графики каждые K шагов (лёгкая операция).")
+        self._fields["update_every"].setToolTip(
+            "Только вкладка «Графики»: новая точка на кривых каждые K шагов симуляции. "
+            "На 3D и анимацию не влияет.",
+        )
         cells_form.addRow(
             self._label("Графики каждые K шагов:", ""),
             self._fields["update_every"],
@@ -153,8 +156,8 @@ class ConfigTab(QWidget):
             "visual_update_every", 0, 200, s["visual_update_every"],
         )
         self._fields["visual_update_every"].setToolTip(
-            "Обновление 3D Viewer. 0 = авто (зависит от размера сетки). "
-            "Больше K — меньше нагрузка, меньше подвисаний.",
+            "Только «живое» 3D на вкладке Viewer (при включённом чекбоксе там). "
+            "0 = авто по размеру сетки. На графики и анимацию не влияет.",
         )
         cells_form.addRow(
             self._label("3D каждые K шагов (0=авто):", ""),
@@ -173,7 +176,8 @@ class ConfigTab(QWidget):
             "animation_frame_every", 1, 50, s["animation_frame_every"],
         )
         self._fields["animation_frame_every"].setToolTip(
-            "Сохранять каждый N-й шаг в анимацию (1 = все шаги).",
+            "Кадры для проигрывания после симуляции: каждый N-й шаг симуляции (1 = все). "
+            "На графики и живое 3D не влияет.",
         )
         cells_form.addRow(
             self._label("Кадр анимации каждые N шагов:", ""),
