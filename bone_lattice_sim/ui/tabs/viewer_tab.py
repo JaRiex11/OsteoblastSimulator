@@ -101,6 +101,7 @@ class ViewerTab(QWidget):
         self._anim_context: LatticeVisualContext | None = None
         self._anim_frames: list[VisualSnapshot] = []
         self._anim_index = 0
+        self._anim_scene_ready = False
         self._anim_timer = QTimer(self)
         self._anim_timer.timeout.connect(self._on_anim_tick)
 
@@ -157,6 +158,7 @@ class ViewerTab(QWidget):
         self._stop_animation()
         self._anim_frames.clear()
         self._anim_context = None
+        self._anim_scene_ready = False
         self._setup_animation_controls()
         self.viewer.clear()
         self.lbl_step.setText("Шаг: —")
@@ -168,6 +170,7 @@ class ViewerTab(QWidget):
     ) -> None:
         self._anim_context = context
         self._anim_frames = list(frames)
+        self._anim_scene_ready = self.viewer.has_lattice_context
         self._setup_animation_controls()
 
     def _setup_animation_controls(self) -> None:
@@ -188,11 +191,24 @@ class ViewerTab(QWidget):
     def live_3d_enabled(self) -> bool:
         return self.chk_live_3d.isChecked()
 
+    def _ensure_anim_scene(self) -> None:
+        """Один раз строим throats и фиксируем камеру; дальше только update_snapshot."""
+        if self._anim_scene_ready or not self._anim_frames or self._anim_context is None:
+            return
+        self.show_lattice(
+            self._anim_context,
+            self._anim_frames[0],
+            reset_camera=True,
+            fast=True,
+        )
+        self._anim_scene_ready = True
+
     def _start_animation(self) -> None:
         if not self._anim_frames or self._anim_context is None:
             return
+        self._ensure_anim_scene()
         self._anim_index = self.slider_anim.value()
-        self._anim_timer.start(120)
+        self._anim_timer.start(150)
         self.btn_anim_play.setEnabled(False)
         self.btn_anim_stop.setEnabled(True)
 
@@ -220,9 +236,15 @@ class ViewerTab(QWidget):
         self._show_anim_frame(value)
 
     def _show_anim_frame(self, index: int) -> None:
+        if self._anim_context is None:
+            return
         snap = self._anim_frames[index]
         self.viewer.set_fast_mode(True)
-        self.viewer.update_snapshot(snap)
+        if not self._anim_scene_ready:
+            self.show_lattice(self._anim_context, snap, reset_camera=True, fast=True)
+            self._anim_scene_ready = True
+        else:
+            self.viewer.update_snapshot(snap)
         n = self.viewer.occupied_count(snap)
         self.lbl_step.setText(f"Анимация шаг {snap.step} | занятых пор: {n}")
         self.lbl_anim.setText(f"Кадр: {index} / {len(self._anim_frames) - 1}")

@@ -24,6 +24,9 @@ COLORS = {
 
 CELL_ACTOR_NAMES = ("cells_empty", "cells_ob", "cells_msc", "cells_fib")
 
+# Тип: ((pos), (focal), (view_up))
+CameraPosition = tuple[tuple[float, float, float], tuple[float, float, float], tuple[float, float, float]]
+
 
 def _estimate_spacing(coords: np.ndarray) -> float:
     if len(coords) < 2:
@@ -47,6 +50,17 @@ def _throat_lines_mesh(coords: np.ndarray, edges: np.ndarray) -> pv.PolyData:
     return pv.PolyData(coords, lines=cells)
 
 
+def _fixed_clipping_from_coords(coords: np.ndarray, spacing: float, radius_factor: float) -> tuple[float, float]:
+    """Clipping по bbox всей решётки, не по текущих клетках (убирает «пульсацию» кадров)."""
+    pad = spacing * (radius_factor + 1.0)
+    mins = coords.min(axis=0) - pad
+    maxs = coords.max(axis=0) + pad
+    diagonal = float(np.linalg.norm(maxs - mins))
+    near = max(diagonal * 0.02, 1e-3)
+    far = max(diagonal * 4.0, near + 1.0)
+    return near, far
+
+
 class LatticeViewer3D(QWidget):
     """Интерактивный 3D viewer внутри PyQt."""
 
@@ -66,7 +80,12 @@ class LatticeViewer3D(QWidget):
         self._cell_radius_factor = 0.24
         self._throats_built = False
         self._fast_mode = False
-        self._reset_camera_next = True
+        self._camera_locked = False
+        self._fixed_clipping: tuple[float, float] | None = None
+
+    @property
+    def has_lattice_context(self) -> bool:
+        return self._context is not None
 
     @property
     def cell_radius_factor(self) -> float:
@@ -100,7 +119,31 @@ class LatticeViewer3D(QWidget):
         self._context = None
         self._last_snapshot = None
         self._throats_built = False
-        self._reset_camera_next = True
+        self._camera_locked = False
+        self._fixed_clipping = None
+        self.plotter.camera_set = False
+
+    def _stash_camera(self) -> CameraPosition:
+        return self.plotter.camera_position
+
+    def _restore_camera(self, position: CameraPosition) -> None:
+        self.plotter.camera_position = position
+
+    def _ensure_fixed_clipping(self) -> None:
+        if self._context is None:
+            return
+        if self._fixed_clipping is None:
+            self._fixed_clipping = _fixed_clipping_from_coords(
+                self._context.coords,
+                self._base_spacing,
+                self._cell_radius_factor,
+            )
+        self.plotter.camera.clipping_range = self._fixed_clipping
+
+    def _lock_camera_after_draw(self) -> None:
+        self._ensure_fixed_clipping()
+        self._camera_locked = True
+        self.plotter.camera_set = True
 
     def show_lattice(
         self,
@@ -112,14 +155,16 @@ class LatticeViewer3D(QWidget):
         self._context = context
         self._last_snapshot = snapshot
         self._base_spacing = _estimate_spacing(context.coords)
-        self._reset_camera_next = reset_camera
+        self._fixed_clipping = None
+        self._camera_locked = False
+        self.plotter.camera_set = False
         self.plotter.clear()
         self._throats_built = False
         self._rebuild_throats_if_needed()
         self._update_cells_only()
         if reset_camera:
             self.plotter.reset_camera()
-            self._reset_camera_next = False
+        self._lock_camera_after_draw()
         self.plotter.render()
 
     def update_snapshot(self, snapshot: VisualSnapshot) -> None:
@@ -127,13 +172,22 @@ class LatticeViewer3D(QWidget):
         if self._context is None:
             return
         self._last_snapshot = snapshot
+        cam = self._stash_camera() if self._camera_locked else None
         self._update_cells_only()
+        if self._camera_locked and cam is not None:
+            self._restore_camera(cam)
+        self._ensure_fixed_clipping()
         self.plotter.render()
 
     def refresh_cells(self) -> None:
         """Перерисовать клетки (например после смены размера сфер)."""
         if self._last_snapshot is not None:
+            cam = self._stash_camera() if self._camera_locked else None
+            self._fixed_clipping = None
             self._update_cells_only()
+            if self._camera_locked and cam is not None:
+                self._restore_camera(cam)
+            self._ensure_fixed_clipping()
             self.plotter.render()
 
     def _remove_cell_actors(self) -> None:
@@ -164,6 +218,7 @@ class LatticeViewer3D(QWidget):
             line_width=1.2,
             opacity=0.3,
             render_lines_as_tubes=False,
+            reset_camera=False,
         )
         self._throats_built = True
 
@@ -187,6 +242,7 @@ class LatticeViewer3D(QWidget):
             opacity=1.0,
             smooth_shading=not self._fast_mode,
             lighting=True,
+            reset_camera=False,
         )
 
     def _update_cells_only(self) -> None:
