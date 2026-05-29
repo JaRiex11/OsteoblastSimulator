@@ -1,0 +1,33 @@
+@startuml simulation_communication_step
+skinparam shadowing false
+title Диаграмма коммуникации — объекты при step()
+
+object ":Simulation" as sim
+object ":Cell" as cell
+object ":LatticeGraph" as lat
+object ":occupancy" as occ
+object ":Random" as rng
+object ":Intent[]" as intents
+
+sim -> cell : 1: получить pore
+cell --> sim
+sim -> lat : 2: neighbors(pore)
+lat --> sim : 3: список индексов
+sim -> occ : 4: фильтр свободных
+occ --> sim
+sim -> rng : 5: random() выбор действия
+rng --> sim
+sim -> rng : 6: choice(target)
+rng --> sim
+sim -> intents : 7: append(Intent)
+sim -> sim : 8: resolve_conflicts
+sim -> occ : 9: update (migrate/prolif)
+
+note bottom of sim
+  Клетки не обмениваются
+  сообщениями друг с другом;
+  взаимодействие только через
+  общий occupancy[] (стигмергия).
+end note
+
+@enduml

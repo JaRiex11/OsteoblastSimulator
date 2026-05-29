@@ -1,0 +1,24 @@
+@startuml simulation_state_intent
+skinparam shadowing false
+title Диаграмма состояний — намерение (Intent) в течение одного шага
+
+[*] --> Proposed : клетка создала Intent\n(миграция или деление)
+
+Proposed --> Cancelled : target уже занят
+Proposed --> Cancelled : contact inhibition\n(>=2 Intent на одну пору)
+Proposed --> Accepted : единственный претендент\nна пустую пору
+
+Accepted --> AppliedMigrate : action == MIGRATE\n_apply_migrations
+Accepted --> AppliedProlif : action == PROLIF\n_apply_proliferations
+
+AppliedMigrate --> [*]
+AppliedProlif --> [*]
+Cancelled --> [*]
+
+note right of Cancelled
+  Намерение отбрасывается,
+  клетка остаётся на месте
+  (для migrate/prolif)
+end note
+
+@enduml

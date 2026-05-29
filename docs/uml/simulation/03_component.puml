@@ -1,0 +1,40 @@
+@startuml simulation_component
+skinparam shadowing false
+title Диаграмма компонентов — слой симуляции
+
+package "bone_lattice_sim.simulation" {
+  [agents.py\nCell, CellType\nCellTypeParams] as Agents
+  [biophysics.py\nCellPhysics\nCalibration] as Bio
+  [simulation.py\nSimulation\nIntent] as Engine
+  [stats.py\nStepStats\nSimulationResult] as Stats
+}
+
+package "bone_lattice_sim.experiment" {
+  [experiment.py\nсборка из settings] as Exp
+}
+
+package "входные данные" {
+  [LatticeGraph\n(топология пор)] as Lattice
+  [dict settings\nили CLI args] as Settings
+}
+
+Agents <-- Engine : uses
+Stats <-- Engine : uses
+Bio <-- Exp : optional
+Agents <-- Exp
+Engine <-- Exp
+Stats <-- Engine
+
+Lattice --> Engine : neighbors,\nn_pores
+Settings --> Exp
+
+interface "ISimulationStep" as IStep
+Engine - IStep : step(), run()
+
+note right of Engine
+  Ядро ABM: синхронный шаг,
+  contact inhibition,
+  migrate → prolif
+end note
+
+@enduml

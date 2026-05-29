@@ -1,0 +1,177 @@
+@startuml actual_classes
+' Доменная модель. В .puml: List~Cell~ — на PNG/SVG рисуется как List<Cell> (стандарт PlantUML).
+
+skinparam shadowing false
+skinparam backgroundColor white
+skinparam defaultFontName Arial
+skinparam defaultFontSize 10
+skinparam classAttributeIconSize 0
+skinparam classFontSize 10
+skinparam packageFontSize 11
+skinparam packageStyle rectangle
+skinparam class {
+  BackgroundColor white
+  BorderColor #333333
+  ArrowColor #333333
+}
+hide circle
+
+title Диаграмма классов — предметная область (реализация)\nBone Lattice Simulator
+
+package "lattice" #E8F4FC {
+
+  class LatticeGraph <<dataclass>> {
+    + n_pores: int
+    + neighbors: List~List~int~~
+    + coords: ndarray
+    + meta: dict
+    --
+    + validate(): void
+  }
+
+  class LatticeEngine <<module>> {
+    --
+    + {static} build_lattice(...): LatticeGraph
+    + {static} average_degree(lattice): float
+    + {static} reachable_fraction(lattice, source_pores): float
+    + {static} center_cluster_pore_indices(lattice, count): List~int~
+    + {static} face_pore_indices(lattice, axis, side): List~int~
+    + {static} random_pore_indices(n_pores, count, rng): List~int~
+  }
+}
+
+package "simulation.agents" #E8F4FC {
+
+  enum CellType {
+    OSTEOBLAST
+    MSC
+    FIBROBLAST
+  }
+
+  enum ActionType {
+    NONE
+    MIGRATE
+    PROLIF
+  }
+
+  class CellTypeParams <<dataclass>> {
+    + p_migrate: float
+    + p_prolif: float
+  }
+
+  class Cell <<dataclass>> {
+    + cell_id: int
+    + cell_type: CellType
+    + pore: int
+    --
+    + params(overrides): CellTypeParams
+  }
+}
+
+package "simulation.biophysics" #E8F4FC {
+
+  class CellPhysics <<dataclass>> {
+    + migration_speed_um_h: float
+    + division_time_h: float
+  }
+
+  class BiophysicsCalibration <<dataclass>> {
+    + pore_spacing_um: float
+    + dt_hours: float
+    + v_max_um_h: float
+    + type_params: Map~CellType, CellTypeParams~
+  }
+
+  class BiophysicsModule <<module>> {
+    --
+    + {static} compute_biophysics_calibration(...): BiophysicsCalibration
+  }
+}
+
+package "simulation" #D4EBFA {
+
+  class Intent <<dataclass>> {
+    + cell_id: int
+    + action: ActionType
+    + target_pore: int
+  }
+
+  class SimulationConfig <<dataclass>> {
+    + time_steps: int
+    + seed: int
+    + type_params: Map~CellType, CellTypeParams~
+    + dt_hours: float
+    --
+    + params_for(cell_type: CellType): CellTypeParams
+    + validate(): void
+  }
+
+  class Simulation {
+    - lattice: LatticeGraph
+    - config: SimulationConfig
+    - cells: List~Cell~
+    - occupancy: List~Cell~
+    - rng: Random
+    - _next_cell_id: int
+    --
+    + __init__(lattice, initial_cells, config): void
+    + step(): Tuple~int, int~
+    + run(on_step, cancel_check, update_every): SimulationResult
+    + occupied_pore_count: int
+    - _decide_action(cell): Intent
+    - _pick_action_type(p_migrate, p_prolif): ActionType
+    - _resolve_conflicts(intents): List~Intent~
+    - _apply_migrations(intents): int
+    - _apply_proliferations(intents): int
+    - _snapshot(step_index, migrate_n, prolif_n): StepStats
+  }
+
+  class StepStats <<dataclass>> {
+    + step: int
+    + occupancy: float
+    + cell_count: int
+    + counts_by_type: dict
+    + migrate_events: int
+    + prolif_events: int
+    + total_time_hours: float
+  }
+
+  class SimulationResult <<dataclass>> {
+    + n_pores: int
+    + history: List~StepStats~
+    + preset: str
+    + avg_lattice_degree: float
+    + dt_hours: float
+    --
+    + occupancy_history: List~float~
+    + final_occupancy: float
+    + time_to_threshold(threshold): int
+  }
+}
+
+LatticeEngine ..> LatticeGraph : create
+Cell --> CellType
+Intent --> ActionType
+SimulationConfig --> CellTypeParams
+Simulation "1" *-- "0..*" Cell
+Simulation --> LatticeGraph
+Simulation --> SimulationConfig
+Simulation ..> Intent
+Simulation ..> SimulationResult : produce
+SimulationResult *-- StepStats
+BiophysicsModule ..> BiophysicsCalibration
+BiophysicsCalibration --> CellTypeParams
+SimulationConfig ..> BiophysicsModule : optional
+
+note bottom of LatticeGraph
+  OpenPNM — только при build_lattice();
+  далее расчёт на LatticeGraph
+end note
+
+note right of Simulation
+  Шаг: Intent,
+  contact inhibition,
+  migrate, prolif
+end note
+
+@enduml

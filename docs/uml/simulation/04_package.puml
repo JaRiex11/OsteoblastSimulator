@@ -1,0 +1,43 @@
+@startuml simulation_package
+skinparam shadowing false
+title Диаграмма пакетов — зависимости (логика симуляции)
+
+package "bone_lattice_sim.lattice" <<Rectangle>> {
+  class LatticeGraph
+}
+
+package "bone_lattice_sim.simulation.agents" {
+  class Cell
+  class CellType
+  class CellTypeParams
+}
+
+package "bone_lattice_sim.simulation.biophysics" {
+  class BiophysicsCalibration
+}
+
+package "bone_lattice_sim.simulation.stats" {
+  class SimulationResult
+  class StepStats
+}
+
+package "bone_lattice_sim.simulation" {
+  class Simulation
+  class SimulationConfig
+  class Intent
+}
+
+package "bone_lattice_sim.experiment" {
+  class experiment_functions
+}
+
+LatticeGraph <.. Simulation : import
+agents <.. Simulation
+stats <.. Simulation
+agents <.. biophysics
+biophysics <.. experiment
+simulation <.. experiment
+lattice <.. experiment
+agents <.. experiment
+
+@enduml

@@ -1,0 +1,41 @@
+@startuml simulation_context
+skinparam shadowing false
+title Контекст системы (C4 / упрощённо) — только логика ABM
+
+actor Исследователь
+
+rectangle "Параметры модели" {
+  card "Вероятности\nили Biophysics" as P
+  card "Начальные клетки\nи режим seed" as S
+  card "Число шагов,\nseed RNG" as T
+}
+
+rectangle "Вход" {
+  database "LatticeGraph\n(топология 3D пор)" as G
+}
+
+rectangle "Ядро симуляции" {
+  component Simulation
+}
+
+rectangle "Выход" {
+  file "SimulationResult\noccupancy, T50, T90\nистория StepStats" as R
+}
+
+Исследователь --> P
+Исследователь --> S
+Исследователь --> T
+P --> Simulation
+S --> Simulation
+T --> Simulation
+G --> Simulation
+Simulation --> R
+Исследователь --> R : анализ
+
+' note bottom of Simulation
+'   Не входят: PyVista, GUI widgets,
+'   CSV writer, OpenPNM builder
+'   (решётка приходит готовой)
+' end note
+
+@enduml

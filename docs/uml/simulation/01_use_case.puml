@@ -1,0 +1,38 @@
+@startuml simulation_use_case
+left to right direction
+skinparam shadowing false
+title Варианты использования — логика симуляции клеток
+
+actor "Исследователь\n(GUI / CLI)" as User
+rectangle "Модель колонизации пор" {
+  usecase "Задать типы клеток\nи вероятности\n(p_migrate, p_prolif)" as UC1
+  usecase "Включить калибровку\nBiological Physics" as UC2
+  usecase "Задать начальное\nразмещение клеток\n(center / face / random / mix)" as UC3
+  usecase "Инициализировать\nSimulation на решётке" as UC4
+  usecase "Выполнить дискретные\nшаги симуляции" as UC5
+  usecase "Остановить прогон\nдосрочно" as UC6
+  usecase "Получить метрики\n(occupancy, T50, T90)" as UC7
+  usecase "Разрешить конфликты\n(contact inhibition)" as UC8
+}
+
+User --> UC1
+User --> UC2
+User --> UC3
+User --> UC4
+User --> UC5
+User --> UC6
+User --> UC7
+
+UC3 ..> UC4 : <<include>>
+UC2 ..> UC1 : <<extend>>\nальтернатива ручным P
+UC5 ..> UC8 : <<include>>
+UC5 ..> UC7 : <<include>>
+UC5 <.. UC6 : <<extend>>
+
+' note right of UC8
+'   Если ≥2 клетки претендуют
+'   на одну пустую пору —
+'   все намерения отменяются
+' end note
+
+@enduml

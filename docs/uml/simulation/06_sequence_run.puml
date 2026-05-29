@@ -1,0 +1,41 @@
+@startuml simulation_sequence_run
+skinparam shadowing false
+title Последовательность — полный прогон (Simulation.run)
+
+actor User
+participant "experiment" as Exp
+participant "Simulation" as Sim
+participant "SimulationResult" as Res
+
+User -> Exp : create_simulation(settings)
+Exp -> Exp : build_lattice()\nbuild_initial_from_settings()
+Exp -> Sim : new Simulation(lattice, initial, config)
+Exp --> User : sim, lattice, initial
+
+User -> Sim : run(on_step, cancel_check)
+
+Sim -> Res : new SimulationResult()
+Sim -> Sim : _snapshot(0)
+Sim -> Res : history.append(step_0)
+opt on_step задан
+  Sim -> User : on_step(step_0)
+end
+
+loop t = 1 .. time_steps
+  opt cancel_check() == True
+    Sim -> Sim : break
+  end
+  Sim -> Sim : step()
+  Sim -> Sim : _snapshot(t)
+  Sim -> Res : history.append(step_t)
+  opt t % update_every == 0
+    Sim -> User : on_step(step_t)
+  end
+end
+
+Sim --> User : SimulationResult
+note over Res
+  T50/T90 из occupancy_history
+end note
+
+@enduml

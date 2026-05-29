@@ -1,0 +1,26 @@
+@startuml simulation_state_pore
+skinparam shadowing false
+title Диаграмма состояний — пора (volume exclusion)
+
+state "Пустая\noccupancy[p] = None" as Empty
+state "Занята\noccupancy[p] = Cell" as Occupied
+
+[*] --> Empty
+
+Empty --> Occupied : миграция клетки\nв эту пору
+Empty --> Occupied : пролиферация\n(дочерняя клетка)
+
+Occupied --> Empty : миграция клетки\nиз этой поры\n(освобождение)
+
+note right of Occupied
+  Не более одной клетки
+  на пору в любой момент
+end note
+
+note bottom of Empty
+  Пролиферация и миграция
+  возможны только в Empty
+  (свободный сосед)
+end note
+
+@enduml

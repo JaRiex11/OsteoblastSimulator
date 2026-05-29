@@ -1,0 +1,117 @@
+@startuml simulation_class
+skinparam classAttributeIconSize 0
+skinparam shadowing false
+title Диаграмма классов — логика симуляции клеток
+
+together {
+  enum CellType {
+    OSTEOBLAST
+    MSC
+    FIBROBLAST
+  }
+  enum ActionType {
+    MIGRATE
+    PROLIF
+  }
+}
+
+class CellTypeParams <<dataclass>> {
+  + p_migrate: float
+  + p_prolif: float
+}
+
+class Cell <<dataclass>> {
+  + cell_id: int
+  + cell_type: CellType
+  + pore: int
+}
+
+class Intent <<dataclass>> {
+  + cell_id: int
+  + action: ActionType
+  + target_pore: int
+}
+
+class SimulationConfig <<dataclass>> {
+  + time_steps: int
+  + seed: int
+  + type_params: dict
+  + dt_hours: float
+  + params_for(type): CellTypeParams
+  + validate()
+}
+
+class Simulation {
+  - lattice: LatticeGraph
+  - cells: list[Cell]
+  - occupancy: list[Cell?]
+  - rng: Random
+  + step(): (migrate_n, prolif_n)
+  + run(on_step, cancel_check): SimulationResult
+  --
+  - _decide_action(cell): Intent?
+  - _resolve_conflicts(intents): list
+  - _apply_migrations(intents): int
+  - _apply_proliferations(intents): int
+}
+
+class StepStats <<dataclass>> {
+  + step: int
+  + occupancy: float
+  + cell_count: int
+  + counts_by_type: dict
+  + migrate_events: int
+  + prolif_events: int
+}
+
+class SimulationResult <<dataclass>> {
+  + history: list[StepStats]
+  + time_to_threshold(0.5): T50
+  + time_to_threshold(0.9): T90
+}
+
+class CellPhysics <<dataclass>> {
+  + migration_speed_um_h: float
+  + division_time_h: float
+}
+
+class BiophysicsCalibration <<dataclass>> {
+  + dt_hours: float
+  + type_params: dict
+}
+
+class "<<function>>\ncompute_biophysics_calibration" as Calibrate
+
+class LatticeGraph <<external>> {
+  + n_pores: int
+  + neighbors: list
+}
+
+class "<<module>>\nexperiment" as Experiment {
+  + type_params_from_settings()
+  + simulation_config_from_settings()
+  + build_initial_from_settings()
+  + create_simulation()
+}
+
+Cell --> CellType
+Intent --> ActionType
+Simulation "1" *-- "0..*" Cell
+Simulation "1" o-- "1" SimulationConfig
+Simulation "1" --> "1" LatticeGraph : reads neighbors
+Simulation ..> Intent : creates
+Simulation ..> SimulationResult : produces
+SimulationResult "1" *-- "0..*" StepStats
+SimulationConfig --> CellTypeParams
+Calibrate ..> BiophysicsCalibration
+BiophysicsCalibration --> CellTypeParams
+Experiment ..> SimulationConfig
+Experiment ..> Simulation
+
+note bottom of Simulation
+  **Volume exclusion:** occupancy[pore]
+  не более одной Cell.
+  **Одно действие** на клетку за шаг.
+end note
+
+@enduml

@@ -1,0 +1,40 @@
+@startuml simulation_activity_step
+skinparam shadowing false
+title Диаграмма деятельности — алгоритм step()
+
+start
+:shuffle список клеток;
+:intents = [];
+
+while (есть необработанные клетки?) is (да)
+  :cell = следующая клетка;
+  :free = соседние поры\nгде occupancy[p] == None;
+  if (free пуст?) then (да)
+    :нет Intent;
+  else (нет)
+    :action = _pick_action_type\n(p_migrate, p_prolif);
+    if (action == None?) then (да)
+      :покой;
+    else (нет)
+      :target = random(free);
+      :intents += Intent(cell, action, target);
+    endif
+  endif
+endwhile (нет)
+
+:resolved = _resolve_conflicts(intents);
+note right
+  На одну пустую пору
+  максимум одно намерение;
+  иначе все отменены
+end note
+
+partition "Применение" {
+  :migrate_n = _apply_migrations(resolved);
+  :prolif_n = _apply_proliferations(resolved);
+}
+
+:return (migrate_n, prolif_n);
+stop
+
+@enduml

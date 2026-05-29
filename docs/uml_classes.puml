@@ -1,0 +1,274 @@
+@startuml bone_lattice_sim_classes
+' Обзорная диаграмма (краткая). Полная UML реализации: actual_classes.puml
+' Рендер реализации: python scripts/render_actual_diagram.py
+skinparam classAttributeIconSize 0
+skinparam packageStyle rectangle
+skinparam shadowing false
+top to bottom direction
+
+package "lattice" <<Frame>> {
+  class LatticeGraph <<dataclass>> {
+    + n_pores: int
+    + neighbors: list[list[int]]
+    + coords: ndarray
+    + meta: dict
+    + validate()
+  }
+  class "<<utility>>\nlattice.engine" as LatticeEngine {
+    {static} + build_lattice(size, preset, ...) : LatticeGraph
+    {static} + average_degree(lattice) : float
+    {static} + reachable_fraction(lattice, sources) : float
+    {static} + center_cluster_pore_indices(...)
+    {static} + random_face_pore_indices(...)
+  }
+}
+
+package "simulation.agents" <<Frame>> {
+  enum CellType {
+    OSTEOBLAST
+    MSC
+    FIBROBLAST
+  }
+  enum ActionType {
+    NONE
+    MIGRATE
+    PROLIF
+  }
+  class CellTypeParams <<dataclass>> {
+    + p_migrate: float
+    + p_prolif: float
+  }
+  class Cell <<dataclass>> {
+    + cell_id: int
+    + cell_type: CellType
+    + pore: int
+    + params(overrides) : CellTypeParams
+  }
+}
+
+package "simulation.biophysics" <<Frame>> {
+  class CellPhysics <<dataclass>> {
+    + migration_speed_um_h: float
+    + division_time_h: float
+  }
+  class BiophysicsCalibration <<dataclass>> {
+    + pore_spacing_um: float
+    + dt_hours: float
+    + v_max_um_h: float
+    + type_params: dict
+  }
+  class "<<utility>>\nbiophysics" as BiophysicsUtil {
+    {static} + compute_biophysics_calibration(...) : BiophysicsCalibration
+  }
+}
+
+package "simulation" <<Frame>> {
+  class Intent <<dataclass>> {
+    + cell_id: int
+    + action: ActionType
+    + target_pore: int
+  }
+  class SimulationConfig <<dataclass>> {
+    + time_steps: int
+    + seed: int | None
+    + type_params: dict
+    + dt_hours: float | None
+    + params_for(cell_type) : CellTypeParams
+    + validate()
+  }
+  class Simulation {
+    - lattice: LatticeGraph
+    - config: SimulationConfig
+    - cells: list[Cell]
+    - occupancy: list[Cell | None]
+    - rng: Random
+    + step() : tuple[int, int]
+    + run(record_history) : SimulationResult
+  }
+  class StepStats <<dataclass>> {
+    + step: int
+    + occupancy: float
+    + cell_count: int
+    + counts_by_type: dict
+    + migrate_events: int
+    + prolif_events: int
+  }
+  class SimulationResult <<dataclass>> {
+    + n_pores: int
+    + history: list[StepStats]
+    + time_to_threshold(threshold) : int | None
+  }
+}
+
+package "experiment" <<Frame>> {
+  class "<<utility>>\nexperiment" as Experiment {
+    {static} + create_lattice(settings) : LatticeGraph
+    {static} + create_simulation(...) : tuple
+    {static} + type_params_from_settings(settings) : dict
+    {static} + build_initial_from_settings(...) : list
+  }
+}
+
+package "io" <<Frame>> {
+  class SimulationRun <<dataclass>> {
+    + result: SimulationResult
+    + lattice: LatticeGraph
+    + settings: dict
+    + initial: list
+    + final_cells: list
+    + animation_frames: list
+  }
+  class "<<utility>>\nexport / settings" as IOUtil {
+    {static} + load_settings() / save_settings()
+    {static} + export_csv_json(...)
+    {static} + build_run_bundle(...) : SimulationRun
+  }
+}
+
+package "viz" <<Frame>> {
+  class LatticeVisualContext <<dataclass>> {
+    + coords: ndarray
+    + edges: ndarray
+    + n_pores: int
+  }
+  class VisualSnapshot <<dataclass>> {
+    + step: int
+    + pore_types: ndarray
+  }
+  class LatticeViewer3D {
+    - plotter: QtInteractor
+    + set_lattice(context)
+    + update_snapshot(snapshot)
+    + export_png(path)
+  }
+  class "<<utility>>\nsnapshot" as SnapshotUtil {
+    {static} + build_visual_context(lattice)
+    {static} + snapshot_from_simulation(sim, step)
+  }
+}
+
+package "ui" <<Frame>> {
+  class MainWindow {
+    - config_tab: ConfigTab
+    - viewer_tab: ViewerTab
+    - charts_tab: ChartsTab
+    - export_tab: ExportTab
+    - worker: SimulationWorker
+    - last_run: SimulationRun
+    + on_run() / on_stop()
+  }
+  class ConfigTab
+  class ViewerTab
+  class ChartsTab
+  class ExportTab
+  class SimulationWorker {
+    <<QThread>>
+    + step_updated: Signal
+    + visual_updated: Signal
+    + finished_ok: Signal
+    + cancel()
+    + run()
+  }
+}
+
+' --- Связи доменной модели ---
+LatticeEngine ..> LatticeGraph : creates
+Simulation "1" *-- "1" LatticeGraph
+Simulation "1" o-- "1" SimulationConfig
+Simulation "1" *-- "0..*" Cell
+Simulation ..> Intent : uses
+Simulation ..> SimulationResult : produces
+SimulationResult "1" *-- "0..*" StepStats
+Cell --> CellType
+SimulationConfig --> CellTypeParams
+Intent --> ActionType
+BiophysicsUtil ..> BiophysicsCalibration : creates
+BiophysicsCalibration --> CellTypeParams
+SimulationConfig ..> BiophysicsUtil : optional
+
+' --- Сборка эксперимента ---
+Experiment ..> LatticeGraph : create_lattice
+Experiment ..> Simulation : create_simulation
+Experiment ..> SimulationConfig
+
+' --- Результаты и визуализация ---
+IOUtil ..> SimulationRun : build_run_bundle
+SimulationRun *-- SimulationResult
+SimulationRun *-- LatticeGraph
+SnapshotUtil ..> LatticeVisualContext
+SnapshotUtil ..> VisualSnapshot
+LatticeViewer3D ..> LatticeVisualContext
+LatticeViewer3D ..> VisualSnapshot
+
+' --- UI ---
+MainWindow *-- ConfigTab
+MainWindow *-- ViewerTab
+MainWindow *-- ChartsTab
+MainWindow *-- ExportTab
+MainWindow o-- SimulationWorker
+MainWindow o-- SimulationRun
+ViewerTab *-- LatticeViewer3D
+SimulationWorker ..> Simulation : runs
+SimulationWorker ..> SimulationRun : emits
+SimulationWorker ..> VisualSnapshot : emits
+ChartsTab ..> StepStats : plots
+ExportTab ..> SimulationRun : exports
+
+note bottom of LatticeGraph
+  **OpenPNM** используется только
+  при build_lattice(); далее
+  симуляция на LatticeGraph.
+end note
+
+note right of Simulation
+  Синхронный шаг:
+  Intent → разрешение конфликтов
+  (contact inhibition) → migrate → prolif
+end note
+
+@enduml
+
+@startuml osteoblast_sim_legacy
+' Упрощённая диаграмма legacy-модуля osteoblast_sim (2D)
+skinparam classAttributeIconSize 0
+skinparam packageStyle rectangle
+title osteoblast_sim (legacy, 2D NetworkX)
+
+package "graph" {
+  class "<<utility>>\nbuilder" as GraphBuilder {
+    {static} + build_graph(type, ...) : Graph
+    {static} + create_grid_2d_random(...)
+  }
+}
+
+package "simulation" {
+  class SimulationConfig <<dataclass>> {
+    + p_migrate: float
+    + p_prolif: float
+    + time_steps: int
+  }
+  class OsteoblastSimulation {
+    - graph: Graph
+    - cells: list[int]
+    - occupied: set
+    + step(step_index) : float
+    + run(record_history) : SimulationResult
+  }
+  class SimulationResult <<dataclass>> {
+    + occupancy_history: list
+    + time_to_threshold(threshold)
+  }
+}
+
+package "app" {
+  class MainWindow <<tkinter>>
+  class ExperimentRunner
+}
+
+GraphBuilder ..> "NetworkX\nGraph" as NXGraph
+OsteoblastSimulation --> NXGraph
+OsteoblastSimulation --> SimulationConfig
+OsteoblastSimulation ..> SimulationResult
+MainWindow ..> OsteoblastSimulation
+
+@enduml

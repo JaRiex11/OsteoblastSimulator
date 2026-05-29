@@ -1,0 +1,56 @@
+@startuml simulation_object_example
+skinparam shadowing false
+title Диаграмма объектов — пример на шаге t=5 (учебный)
+
+object "sim : Simulation" as sim {
+  time_steps = 200
+  current_step = 5
+}
+
+object "lat : LatticeGraph" as lat {
+  n_pores = 125
+}
+
+object "cfg : SimulationConfig" as cfg {
+  seed = 42
+}
+
+object "c0 : Cell" as c0 {
+  id = 0
+  type = osteoblast
+  pore = 62
+}
+
+object "c1 : Cell" as c1 {
+  id = 1
+  type = osteoblast
+  pore = 63
+}
+
+object "c2 : Cell" as c2 {
+  id = 2
+  type = msc
+  pore = 61
+}
+
+object "intent : Intent" as i1 {
+  cell_id = 0
+  action = MIGRATE
+  target = 87
+}
+
+object "stats : StepStats" as st {
+  step = 5
+  occupancy = 0.12
+  cell_count = 15
+}
+
+sim --> lat
+sim --> cfg
+sim --> c0
+sim --> c1
+sim --> c2
+sim ..> i1 : формируется\nв текущем step()
+sim --> st : _snapshot(5)
+
+@enduml

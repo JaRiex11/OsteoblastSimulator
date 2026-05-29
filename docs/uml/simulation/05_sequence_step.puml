@@ -1,0 +1,53 @@
+@startuml simulation_sequence_step
+skinparam shadowing false
+title Последовательность — один дискретный шаг (Simulation.step)
+
+participant "Simulation" as Sim
+participant "RNG" as Rng
+participant "cells[]" as Cells
+participant "occupancy[]" as Occ
+participant "LatticeGraph" as Lat
+
+== Сбор намерений ==
+Sim -> Sim : shuffle(cells)
+loop для каждой cell в случайном порядке
+  Sim -> Lat : neighbors[cell.pore]
+  Sim -> Occ : свободные соседи?
+  alt нет свободных пор
+    Sim -> Sim : пропуск (нет Intent)
+  else есть свободные
+    Sim -> Rng : random() для _pick_action_type
+    alt MIGRATE или PROLIF
+      Sim -> Rng : choice(free_neighbors)
+      Sim -> Sim : intents.append(Intent)
+    else покой
+      Sim -> Sim : без Intent
+    end
+  end
+end
+
+== Contact inhibition ==
+Sim -> Sim : _resolve_conflicts(intents)
+note right
+  Группировка по target_pore.
+  len(group) >= 2 → все отменены.
+  target уже занят → отмена.
+end note
+
+== Применение ==
+Sim -> Sim : _apply_migrations(resolved)
+loop Intent с action=MIGRATE
+  Sim -> Occ : освободить старую пору
+  Sim -> Cells : cell.pore = target
+  Sim -> Occ : занять target
+end
+
+Sim -> Sim : _apply_proliferations(resolved)
+loop Intent с action=PROLIF
+  Sim -> Cells : new Cell(тип родителя)
+  Sim -> Occ : занять target дочерней
+end
+
+Sim --> Sim : return (migrate_n, prolif_n)
+
+@enduml

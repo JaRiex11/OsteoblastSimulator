@@ -1,0 +1,159 @@
+@startuml planning_classes
+' Планирование. List~T~ в исходнике → List<T> на рисунке (PlantUML).
+
+skinparam shadowing false
+skinparam backgroundColor white
+skinparam defaultFontName Arial
+skinparam defaultFontSize 10
+skinparam classAttributeIconSize 0
+skinparam classFontSize 10
+skinparam packageFontSize 11
+skinparam packageStyle rectangle
+skinparam class {
+  BackgroundColor white
+  BorderColor #333333
+  ArrowColor #333333
+}
+hide circle
+
+title Классы предметной области (планирование)\nBone Lattice Simulator
+
+package "Домен: решётка" #E8F4FC {
+
+  class LatticeGraph <<entity>> {
+    + n_pores: int
+    + neighbors: List~List~int~~
+    + coords: ndarray
+    + meta: Map~String, Object~
+    --
+    + validate(): void
+  }
+
+  class LatticeBuilder <<utility>> {
+    --
+    + {static} build_lattice(size: int, preset: String, deletion: float, seed: int): LatticeGraph
+    + {static} average_degree(lattice: LatticeGraph): float
+    + {static} reachable_fraction(lattice, sources): float
+  }
+}
+
+package "Домен: клетки" #E8F4FC {
+
+  enum CellType {
+    OSTEOBLAST
+    MSC
+    FIBROBLAST
+  }
+
+  enum ActionType {
+    NONE
+    MIGRATE
+    PROLIF
+  }
+
+  class CellTypeParams <<value>> {
+    + p_migrate: float
+    + p_prolif: float
+  }
+
+  class Cell <<entity>> {
+    + cell_id: int
+    + cell_type: CellType
+    + pore: int
+    --
+    + params(overrides: Map~CellType, CellTypeParams~): CellTypeParams
+  }
+}
+
+package "Домен: биофизика" #E8F4FC {
+
+  class BiophysicsCalibration <<value>> {
+    + pore_spacing_um: float
+    + dt_hours: float
+    + v_max_um_h: float
+    + type_params: Map~CellType, CellTypeParams~
+  }
+
+  class BiophysicsCalibrator <<utility>> {
+    --
+    + {static} calibrate(pore_spacing_um: float): BiophysicsCalibration
+  }
+}
+
+package "Домен: симуляция" #D4EBFA {
+
+  class Intent <<value>> {
+    + cell_id: int
+    + action: ActionType
+    + target_pore: int
+  }
+
+  class SimulationConfig <<value>> {
+    + time_steps: int
+    + seed: int
+    + type_params: Map~CellType, CellTypeParams~
+    + dt_hours: float
+    --
+    + params_for(cell_type: CellType): CellTypeParams
+    + validate(): void
+  }
+
+  class Simulation <<controller>> {
+    - lattice: LatticeGraph
+    - config: SimulationConfig
+    - cells: List~Cell~
+    - occupancy: List~Cell~
+    - rng: Random
+    - _next_cell_id: int
+    --
+    + step(): Tuple~int, int~
+    + run(...): SimulationResult
+    - _pick_action_type(p_migrate, p_prolif): ActionType
+    - _resolve_conflicts(intents: List~Intent~): List~Intent~
+    - _apply_migrations(intents: List~Intent~): int
+    - _apply_proliferations(intents: List~Intent~): int
+  }
+
+  class StepStats <<value>> {
+    + step: int
+    + occupancy: float
+    + cell_count: int
+    + counts_by_type: dict
+    + migrate_events: int
+    + prolif_events: int
+    + total_time_hours: float
+  }
+
+  class SimulationResult <<entity>> {
+    + n_pores: int
+    + history: List~StepStats~
+    + preset: String
+    + avg_lattice_degree: float
+    + dt_hours: float
+    --
+    + time_to_threshold(threshold: float): int
+  }
+}
+
+LatticeBuilder ..> LatticeGraph : create
+Cell --> CellType
+Intent --> ActionType
+SimulationConfig --> CellTypeParams
+Simulation "1" *-- "0..*" Cell
+Simulation --> LatticeGraph
+Simulation --> SimulationConfig
+Simulation ..> Intent
+Simulation ..> SimulationResult : produce
+SimulationResult *-- StepStats
+BiophysicsCalibrator ..> BiophysicsCalibration
+BiophysicsCalibration --> CellTypeParams
+SimulationConfig ..> BiophysicsCalibrator : optional
+
+note right of Simulation
+  Один шаг (синхронный):
+  1. Intent для каждой клетки
+  2. contact inhibition
+  3. migrate, затем prolif
+end note
+
+@enduml
